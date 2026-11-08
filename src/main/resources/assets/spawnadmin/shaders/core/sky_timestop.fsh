@@ -26,6 +26,6 @@ void main() {
     vec3 cold = vec3(lum) * vec3(0.86, 0.95, 1.10) + vec3(0.02, 0.03, 0.05);
     c = mix(c, cold, s * 0.88);
     float vignette = smoothstep(0.85, 0.25, r);
-    c *= mix(1.0, 0.65 + 0.35 * vignette, s);
+    c *= mix(1.0, 0.78 + 0.22 * vignette, s);
     fragColor = vec4(c, 1.0);
 }

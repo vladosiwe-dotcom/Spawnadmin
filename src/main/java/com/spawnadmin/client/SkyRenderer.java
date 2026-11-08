@@ -18,7 +18,6 @@ import com.spawnadmin.sky.geom.ShardData;
 import com.spawnadmin.sky.geom.V2;
 import com.spawnadmin.sky.geom.V3;
 import net.minecraft.client.Camera;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
@@ -330,9 +329,19 @@ final class SkyRenderer {
             return;
         }
         ShaderInstance shader = ModShaders.hand;
-        shader.safeGetUniform("HandParams").set((float) HAND.intensity, 0f, 0f, 0f);
         RenderSystem.setShader(() -> shader);
+        // Pass 1: solid pale body with a cyan rim (visible against the bright day sky).
+        shader.safeGetUniform("HandParams").set((float) HAND.intensity, 1f, 0f, 0f);
+        RenderSystem.blendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA,
+                GlStateManager.SourceFactor.ONE, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
+        emitHand(base);
+        // Pass 2: additive energy glow with flowing streaks.
+        shader.safeGetUniform("HandParams").set((float) HAND.intensity, 0f, 0f, 0f);
         RenderSystem.blendFunc(GlStateManager.SourceFactor.ONE, GlStateManager.DestFactor.ONE);
+        emitHand(base);
+    }
+
+    private static void emitHand(V3 base) {
         BufferBuilder buf = Tesselator.getInstance().begin(VertexFormat.Mode.TRIANGLES, DefaultVertexFormat.POSITION_TEX_COLOR_NORMAL);
         HandRig.mesh(HAND, (pos, n, along, fade) -> {
             V3 p = base.add(pos);
@@ -370,7 +379,4 @@ final class SkyRenderer {
         }
     }
 
-    static Minecraft mc() {
-        return Minecraft.getInstance();
-    }
 }

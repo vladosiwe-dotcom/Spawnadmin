@@ -3,6 +3,7 @@ package com.spawnadmin.server;
 import com.spawnadmin.SpawnAdmin;
 import com.spawnadmin.SpawnAdminConfig;
 import com.spawnadmin.network.SkyEventEndPayload;
+import com.spawnadmin.network.SpawnAdminNetwork;
 import com.spawnadmin.realm.AdminRealm;
 import com.spawnadmin.sky.SkyTimeline;
 import net.minecraft.network.chat.Component;
@@ -23,7 +24,6 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
-import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -102,17 +102,45 @@ public final class SkyEventManager {
     public static int cancelAll(ServerLevel level) {
         int count = 0;
         for (ServerSkyEvent event : EVENTS.values()) {
-            if (event.level == level && !event.aborted && event.elapsed() < event.restoreAt) {
-                abort(event);
+            if (event.level == level && cancelEvent(event)) {
                 count++;
             }
         }
-        PENDING.clear();
+        PENDING.keySet().removeIf(uuid -> {
+            ServerPlayer p = level.getServer().getPlayerList().getPlayer(uuid);
+            return p == null || p.level() == level;
+        });
         return count;
+    }
+
+    /** Cancels one player's pending or running summoning. */
+    public static boolean cancel(ServerPlayer player) {
+        boolean pending = PENDING.remove(player.getUUID()) != null;
+        ServerSkyEvent event = findByTarget(player.getUUID());
+        return (event != null && cancelEvent(event)) || pending;
+    }
+
+    private static boolean cancelEvent(ServerSkyEvent event) {
+        if (event.aborted || event.teleported || event.elapsed() >= event.restoreAt) {
+            return false;
+        }
+        abort(event);
+        return true;
     }
 
     public static int activeCount() {
         return EVENTS.size();
+    }
+
+    /** Read-only view for tests and diagnostics: is a summoning running for this player? */
+    public static boolean hasEvent(UUID player) {
+        return findByTarget(player) != null;
+    }
+
+    /** Restore tick of the player's event, or -1. */
+    public static int restoreAtFor(UUID player) {
+        ServerSkyEvent event = findByTarget(player);
+        return event == null ? -1 : event.restoreAt;
     }
 
     // ------------------------------------------------------------------ ticking
@@ -139,7 +167,7 @@ public final class SkyEventManager {
         while (it.hasNext()) {
             ServerSkyEvent event = it.next();
             if (tickEvent(server, event)) {
-                PacketDistributor.sendToPlayersInDimension(event.level, new SkyEventEndPayload(event.id));
+                SpawnAdminNetwork.sendToLevel(event.level, new SkyEventEndPayload(event.id));
                 it.remove();
             }
         }
@@ -282,7 +310,7 @@ public final class SkyEventManager {
         }
         for (ServerSkyEvent event : EVENTS.values()) {
             if (event.level == sp.level()) {
-                PacketDistributor.sendToPlayer(sp, event.toPayload());
+                SpawnAdminNetwork.send(sp, event.toPayload());
             }
         }
     }
@@ -290,7 +318,7 @@ public final class SkyEventManager {
     // ------------------------------------------------------------------ helpers
 
     private static void broadcast(ServerSkyEvent event) {
-        PacketDistributor.sendToPlayersInDimension(event.level, event.toPayload());
+        SpawnAdminNetwork.sendToLevel(event.level, event.toPayload());
     }
 
     private static ServerSkyEvent findByTarget(UUID uuid) {

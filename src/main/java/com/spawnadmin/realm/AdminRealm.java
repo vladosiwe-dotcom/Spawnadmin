@@ -32,11 +32,17 @@ public final class AdminRealm {
         return id == null ? DEFAULT_REALM : ResourceKey.create(Registries.DIMENSION, id);
     }
 
+    private static ResourceKey<Level> warnedMissing;
+
     public static ServerLevel realmLevel(MinecraftServer server) {
-        ServerLevel level = server.getLevel(realmKey());
-        if (level == null) {
-            SpawnAdmin.LOGGER.warn("Target dimension {} does not exist, falling back to {}", realmKey().location(), DEFAULT_REALM.location());
+        ResourceKey<Level> key = realmKey();
+        ServerLevel level = server.getLevel(key);
+        if (level == null && !key.equals(DEFAULT_REALM)) {
             level = server.getLevel(DEFAULT_REALM);
+        }
+        if (level == null && !key.equals(warnedMissing)) {
+            warnedMissing = key;
+            SpawnAdmin.LOGGER.warn("Target dimension {} is not loaded; the hand cannot carry anyone away", key.location());
         }
         return level;
     }

@@ -167,6 +167,13 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
             player.xOld = player.xo;
             player.yOld = player.yo;
             player.zOld = player.zo;
+            if (t >= SkyTimeline.HAND - 10) {
+                // Cinematic assist: the summoner's gaze is drawn up towards the descending hand.
+                float pitch = player.getXRot();
+                float target = -58f;
+                player.xRotO = pitch;
+                player.setXRot(pitch + (target - pitch) * 0.12f);
+            }
             if (t >= SkyTimeline.TELEPORT - 22) {
                 ScreenFlash.push((float) SkyTimeline.progress(t, SkyTimeline.TELEPORT - 22, SkyTimeline.TELEPORT - 2));
             }

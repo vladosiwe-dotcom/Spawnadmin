@@ -21,5 +21,6 @@
   "subtitles.spawnadmin.time_stop": "Время останавливается",
   "subtitles.spawnadmin.hand_appear": "Спускается рука света",
   "subtitles.spawnadmin.grab_teleport": "Унесён за небо",
-  "subtitles.spawnadmin.sky_restore": "Небо восстанавливается"
+  "subtitles.spawnadmin.sky_restore": "Небо восстанавливается",
+  "commands.spawnadmin.cancel.failed": "Нечего отменять"
 }

@@ -21,11 +21,18 @@ neoForge {
         client {
             client()
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            if (project.hasProperty('autoJoin')) {
+                programArguments.addAll '--quickPlayMultiplayer', project.property('autoJoin').toString()
+            }
         }
+        // Second client for multiplayer testing: ./gradlew runClient2 -PautoJoin=localhost
         client2 {
             client()
             gameDirectory = project.file('run-client2')
             programArguments.addAll '--username', 'Observer'
+            if (project.hasProperty('autoJoin')) {
+                programArguments.addAll '--quickPlayMultiplayer', project.property('autoJoin').toString()
+            }
         }
         server {
             server()

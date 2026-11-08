@@ -20,7 +20,7 @@ import java.util.function.Predicate;
  * /heaven enter [players]  – straight into the administrator's realm
  * /heaven exit [players]   – back to the saved return point
  * /heaven summon [players] – the full sky event, without the silent wait
- * /heaven cancel           – abort events in this dimension; the sky reassembles
+ * /heaven cancel [players] – abort events (in this dimension, or of the given players)
  */
 public final class HeavenCommand {
     private HeavenCommand() {
@@ -50,7 +50,9 @@ public final class HeavenCommand {
                             int n = SkyEventManager.cancelAll(ctx.getSource().getLevel());
                             ctx.getSource().sendSuccess(() -> Component.translatable("commands.spawnadmin.cancel", n), true);
                             return n;
-                        })));
+                        })
+                        .then(Commands.argument("targets", EntityArgument.players())
+                                .executes(ctx -> run(ctx, EntityArgument.getPlayers(ctx, "targets"), SkyEventManager::cancel, "cancel")))));
     }
 
     private static boolean enter(ServerPlayer player) {

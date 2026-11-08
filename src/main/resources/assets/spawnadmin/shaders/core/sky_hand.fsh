@@ -31,8 +31,19 @@ void main() {
     float t = GameTime * 1200.0;
     float flow = noise(texCoord.x * 2.5 - t * 3.0 + worldPos.y * 0.1);
     float streak = pow(noise(texCoord.x * 7.0 - t * 5.0 + dot(N, vec3(3.0, 1.0, 2.0))), 3.0);
-    float body = 0.18 + rim * 1.25 + flow * 0.18 + streak * 0.35;
+    float fade = vertexColor.a * texCoord.y * HandParams.x;
+    // Seen from inside the grip the hand turns to translucent light instead of a white wall.
+    float dist = length(worldPos);
+    float near = smoothstep(2.5, 11.0, dist);
+    if (HandParams.y > 0.5) {
+        // Body pass: a pale solid core with a cyan rim, so the hand reads even against a bright sky.
+        vec3 core = mix(vec3(0.97, 0.99, 1.0), vec3(0.45, 0.78, 1.0), smoothstep(0.15, 0.9, rim));
+        float a = clamp(0.55 + rim * 0.4, 0.0, 0.95) * fade * near;
+        fragColor = vec4(core * (0.92 + flow * 0.08), a);
+        return;
+    }
+    float body = 0.10 + rim * 1.1 + flow * 0.14 + streak * 0.3;
     vec3 c = vertexColor.rgb * body;
-    c += vec3(0.65, 0.85, 1.0) * rim * rim * 0.6;
-    fragColor = vec4(c * vertexColor.a * texCoord.y * HandParams.x, 1.0);
+    c += vec3(0.55, 0.82, 1.0) * rim * rim * 0.7;
+    fragColor = vec4(c * fade * mix(0.35, 1.0, near), 1.0);
 }

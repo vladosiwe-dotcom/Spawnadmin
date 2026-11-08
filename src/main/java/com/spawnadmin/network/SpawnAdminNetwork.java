@@ -1,5 +1,9 @@
 package com.spawnadmin.network;
 
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
@@ -29,11 +33,25 @@ public final class SpawnAdminNetwork {
     }
 
     public static void register(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar("1");
+        // Optional: clients without the mod may still join; they simply do not see the sky event.
+        PayloadRegistrar registrar = event.registrar("1").optional();
         registrar.playToClient(SkyEventSyncPayload.TYPE, SkyEventSyncPayload.CODEC,
                 (payload, ctx) -> ctx.enqueueWork(() -> clientSink.onSync(payload)));
         registrar.playToClient(SkyEventEndPayload.TYPE, SkyEventEndPayload.CODEC,
                 (payload, ctx) -> ctx.enqueueWork(() -> clientSink.onEnd(payload)));
+    }
+
+    /** Sends only to players whose connection negotiated our channel (mod installed). */
+    public static void send(ServerPlayer player, CustomPacketPayload payload) {
+        if (player.connection != null && player.connection.hasChannel(payload)) {
+            PacketDistributor.sendToPlayer(player, payload);
+        }
+    }
+
+    public static void sendToLevel(ServerLevel level, CustomPacketPayload payload) {
+        for (ServerPlayer player : level.players()) {
+            send(player, payload);
+        }
     }
 
     private SpawnAdminNetwork() {

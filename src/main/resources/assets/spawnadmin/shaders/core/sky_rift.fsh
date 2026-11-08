@@ -46,27 +46,31 @@ void main() {
     float t = GameTime * 1200.0;
     float toward = max(dot(D, C), 0.0);
 
-    // Swirling luminous clouds of the other realm.
-    vec3 q = D * 3.2;
-    float swirl = fbm(q + vec3(0.0, t * 0.03, t * 0.02));
-    float clouds = fbm(q * 1.7 + swirl * 1.8 - vec3(t * 0.015));
-    vec3 deep = vec3(0.55, 0.62, 0.95);
-    vec3 gold = vec3(1.0, 0.92, 0.70);
-    vec3 white = vec3(1.0);
-    vec3 col = mix(deep, gold, smoothstep(0.35, 0.8, clouds));
-    col = mix(col, white, smoothstep(0.6, 0.95, clouds) * 0.8);
+    // A deep twilight cosmos: indigo void, violet and gold nebulae drifting slowly.
+    vec3 q = D * 3.0;
+    float swirl = fbm(q + vec3(0.0, t * 0.025, t * 0.018));
+    float neb = fbm(q * 1.8 + swirl * 2.2 - vec3(t * 0.012));
+    float wisps = fbm(q * 5.0 - swirl * 1.5 + vec3(t * 0.02));
+    vec3 voidCol = vec3(0.025, 0.03, 0.10);
+    vec3 violet = vec3(0.32, 0.16, 0.55);
+    vec3 teal = vec3(0.10, 0.38, 0.55);
+    vec3 gold = vec3(1.0, 0.78, 0.42);
+    vec3 col = voidCol;
+    col = mix(col, violet, smoothstep(0.38, 0.72, neb) * 0.85);
+    col = mix(col, teal, smoothstep(0.55, 0.9, swirl) * 0.45);
+    col += gold * pow(smoothstep(0.55, 0.95, neb * 0.6 + wisps * 0.5), 2.0) * 0.75;
 
-    // Heart of the rift and god rays radiating from it.
-    float heart = pow(toward, 24.0) * 2.5 + pow(toward, 5.0) * 0.6;
+    // A distant sun of the other world at the heart of the rift, with soft rays.
+    float heart = pow(toward, 60.0) * 1.6 + pow(toward, 12.0) * 0.35;
     vec3 side = normalize(cross(C, vec3(0.0, 0.0, 1.0)) + 1e-4);
     float ang = atan(dot(D, side), dot(D, cross(C, side)));
-    float rays = pow(0.5 + 0.5 * sin(ang * 13.0 + t * 0.2), 6.0) * pow(toward, 3.0);
-    col += white * (heart + rays * 0.7);
+    float rays = pow(0.5 + 0.5 * sin(ang * 11.0 + t * 0.15), 8.0) * pow(toward, 6.0);
+    col += vec3(1.0, 0.95, 0.85) * heart + gold * rays * 0.35;
 
-    // Distant stars.
-    vec3 sp = floor(D * 260.0);
-    float star = step(0.996, hash3(sp)) * (0.6 + 0.4 * sin(t * 3.0 + hash3(sp + 3.0) * 30.0));
-    col += vec3(star);
+    // Stars, twinkling.
+    vec3 sp = floor(D * 320.0);
+    float star = step(0.9965, hash3(sp)) * (0.55 + 0.45 * sin(t * 2.5 + hash3(sp + 3.0) * 40.0));
+    col += vec3(0.9, 0.95, 1.0) * star;
 
     col *= RiftCenter.w;
     fragColor = vec4(col, vertexColor.a);

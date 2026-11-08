@@ -53,7 +53,7 @@ public final class SkyScene {
         double glow = shellGlow(t, restoreAt);
         double crack = SkyTimeline.progress(t, SkyTimeline.CRACK, SkyTimeline.FALL);
         double burst = Math.exp(-Math.abs(t - SkyTimeline.FALL) / 6.0);
-        return glow * (0.35 + 0.35 * crack) + (t < restoreAt ? burst * 0.8 : 0);
+        return glow * (0.25 + 0.3 * crack) + (t < restoreAt ? burst * 0.45 : 0);
     }
 
     /** Crack front distance in the propagation metric. */

@@ -21,5 +21,6 @@
   "subtitles.spawnadmin.time_stop": "Time stops",
   "subtitles.spawnadmin.hand_appear": "A hand of light descends",
   "subtitles.spawnadmin.grab_teleport": "Carried beyond the sky",
-  "subtitles.spawnadmin.sky_restore": "The sky mends"
+  "subtitles.spawnadmin.sky_restore": "The sky mends",
+  "commands.spawnadmin.cancel.failed": "No summoning to cancel"
 }

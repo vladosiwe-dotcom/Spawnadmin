@@ -14,8 +14,8 @@ import com.spawnadmin.sky.geom.V3;
  * player stay together on every screen.</p>
  */
 public final class HandRig {
-    /** Overall scale: fingers ~5 blocks long, the whole hand ~10 blocks tall. */
-    public static final double SCALE = 1.0;
+    /** Overall scale: fingers ~8 blocks long, the whole hand ~16 blocks tall. */
+    public static final double SCALE = 1.6;
     private static final double PALM_LENGTH = 5.4 * SCALE;
     private static final double PALM_HALF_WIDTH = 2.6 * SCALE;
     private static final double PALM_HALF_THICK = 0.85 * SCALE;
