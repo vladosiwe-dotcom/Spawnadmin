@@ -6,12 +6,10 @@
   "message.spawnadmin.already_in_realm": "Ты уже за пределами неба.",
   "message.spawnadmin.sky_busy": "Небо здесь уже раскалывается. Попробуй позже.",
   "message.spawnadmin.no_realm": "Не удалось достичь измерения.",
-  "commands.spawnadmin.enter": "Отправлено в измерение администратора: %s",
-  "commands.spawnadmin.enter.failed": "Не удалось попасть в измерение администратора",
+  "commands.spawnadmin.enter": "Небеса отвечают игрокам: %s",
+  "commands.spawnadmin.enter.failed": "Призыв не начался (игрок уже в измерении или небо здесь занято)",
   "commands.spawnadmin.exit": "Возвращено домой: %s",
   "commands.spawnadmin.exit.failed": "Некого возвращать: цель не в измерении",
-  "commands.spawnadmin.summon": "Небеса отвечают игрокам: %s",
-  "commands.spawnadmin.summon.failed": "Призыв здесь начать нельзя",
   "commands.spawnadmin.cancel": "Отменено небесных событий: %s",
   "dimension.spawnadmin.admin_realm": "Измерение администратора",
   "subtitles.spawnadmin.heaven_horn": "Звучит Рог Небес",
@@ -22,6 +20,5 @@
   "subtitles.spawnadmin.hand_appear": "Спускается рука света",
   "subtitles.spawnadmin.grab_teleport": "Унесён за небо",
   "subtitles.spawnadmin.sky_restore": "Небо восстанавливается",
-  "commands.spawnadmin.cancel.failed": "Нечего отменять",
-  "item.spawnadmin.heaven_horn.desc3": "Shift + ПКМ: сразу в измерение, без призыва."
+  "commands.spawnadmin.cancel.failed": "Нечего отменять"
 }

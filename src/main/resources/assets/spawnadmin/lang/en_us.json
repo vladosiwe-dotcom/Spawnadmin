@@ -6,12 +6,10 @@
   "message.spawnadmin.already_in_realm": "You are already beyond the sky.",
   "message.spawnadmin.sky_busy": "The sky here is already breaking. Try again later.",
   "message.spawnadmin.no_realm": "The realm could not be reached.",
-  "commands.spawnadmin.enter": "Sent %s player(s) to the Administrator's Realm",
-  "commands.spawnadmin.enter.failed": "Could not reach the Administrator's Realm",
+  "commands.spawnadmin.enter": "The heavens answer %s player(s)",
+  "commands.spawnadmin.enter.failed": "The summoning could not start (already in the realm, or the sky here is busy)",
   "commands.spawnadmin.exit": "Returned %s player(s) home",
   "commands.spawnadmin.exit.failed": "Nobody to return: target is not in the realm",
-  "commands.spawnadmin.summon": "The heavens answer %s player(s)",
-  "commands.spawnadmin.summon.failed": "The summoning could not start here",
   "commands.spawnadmin.cancel": "Cancelled %s sky event(s)",
   "dimension.spawnadmin.admin_realm": "Administrator's Realm",
   "subtitles.spawnadmin.heaven_horn": "Horn of the Heavens sounds",
@@ -22,6 +20,5 @@
   "subtitles.spawnadmin.hand_appear": "A hand of light descends",
   "subtitles.spawnadmin.grab_teleport": "Carried beyond the sky",
   "subtitles.spawnadmin.sky_restore": "The sky mends",
-  "commands.spawnadmin.cancel.failed": "No summoning to cancel",
-  "item.spawnadmin.heaven_horn.desc3": "Sneak + use: enter the realm directly."
+  "commands.spawnadmin.cancel.failed": "No summoning to cancel"
 }

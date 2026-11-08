@@ -17,9 +17,9 @@ import java.util.List;
 import java.util.function.Predicate;
 
 /**
- * /heaven enter [players]  – straight into the administrator's realm
+ * /heaven enter [players]  – into the administrator's realm, always through the full sky
+ *                            animation (only the silent wait is skipped); there is no instant path
  * /heaven exit [players]   – back to the saved return point
- * /heaven summon [players] – the full sky event, without the silent wait
  * /heaven cancel [players] – abort events (in this dimension, or of the given players)
  */
 public final class HeavenCommand {
@@ -34,17 +34,13 @@ public final class HeavenCommand {
         dispatcher.register(Commands.literal("heaven")
                 .requires(src -> src.hasPermission(2))
                 .then(Commands.literal("enter")
-                        .executes(ctx -> run(ctx, List.of(ctx.getSource().getPlayerOrException()), HeavenCommand::enter, "enter"))
+                        .executes(ctx -> run(ctx, List.of(ctx.getSource().getPlayerOrException()), SkyEventManager::startNow, "enter"))
                         .then(Commands.argument("targets", EntityArgument.players())
-                                .executes(ctx -> run(ctx, EntityArgument.getPlayers(ctx, "targets"), HeavenCommand::enter, "enter"))))
+                                .executes(ctx -> run(ctx, EntityArgument.getPlayers(ctx, "targets"), SkyEventManager::startNow, "enter"))))
                 .then(Commands.literal("exit")
                         .executes(ctx -> run(ctx, List.of(ctx.getSource().getPlayerOrException()), HeavenCommand::exit, "exit"))
                         .then(Commands.argument("targets", EntityArgument.players())
                                 .executes(ctx -> run(ctx, EntityArgument.getPlayers(ctx, "targets"), HeavenCommand::exit, "exit"))))
-                .then(Commands.literal("summon")
-                        .executes(ctx -> run(ctx, List.of(ctx.getSource().getPlayerOrException()), SkyEventManager::startNow, "summon"))
-                        .then(Commands.argument("targets", EntityArgument.players())
-                                .executes(ctx -> run(ctx, EntityArgument.getPlayers(ctx, "targets"), SkyEventManager::startNow, "summon"))))
                 .then(Commands.literal("cancel")
                         .executes(ctx -> {
                             int n = SkyEventManager.cancelAll(ctx.getSource().getLevel());
@@ -53,10 +49,6 @@ public final class HeavenCommand {
                         })
                         .then(Commands.argument("targets", EntityArgument.players())
                                 .executes(ctx -> run(ctx, EntityArgument.getPlayers(ctx, "targets"), SkyEventManager::cancel, "cancel")))));
-    }
-
-    private static boolean enter(ServerPlayer player) {
-        return AdminRealm.enter(player);
     }
 
     private static boolean exit(ServerPlayer player) {
