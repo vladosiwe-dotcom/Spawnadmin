@@ -54,13 +54,21 @@ public final class AdminRealm {
 
     /** Moves the player into the realm, remembering where they came from. */
     public static boolean enter(ServerPlayer player) {
+        return enter(player, player.position());
+    }
+
+    /**
+     * Moves the player into the realm. {@code returnPos} is where they will be sent back to: for
+     * the summoning this is the spot on the ground where the hand took them, not the sky.
+     */
+    public static boolean enter(ServerPlayer player, Vec3 returnPos) {
         ServerLevel realm = realmLevel(player.server);
         if (realm == null) {
             return false;
         }
         if (player.level() != realm) {
             player.setData(ModAttachments.RETURN_POINT.get(), new ReturnPoint(true, player.level().dimension(),
-                    player.position(), player.getYRot(), player.getXRot()));
+                    returnPos, player.getYRot(), 0f));
         }
         Vec3 arrival = prepareArrival(realm);
         player.changeDimension(new DimensionTransition(realm, arrival, Vec3.ZERO, player.getYRot(), 0f, DimensionTransition.DO_NOTHING));

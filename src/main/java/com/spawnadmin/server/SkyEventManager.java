@@ -239,7 +239,8 @@ public final class SkyEventManager {
         event.teleported = true;
         revokeFlight(event, target);
         target.noPhysics = false;
-        if (AdminRealm.enter(target)) {
+        Vec3 takenFrom = event.lockPos != null ? event.lockPos : event.center;
+        if (AdminRealm.enter(target, takenFrom)) {
             SpawnAdmin.LOGGER.info("Heavenly Summoning #{} carried {} to {}", event.id, target.getName().getString(),
                     AdminRealm.realmKey().location());
         } else {

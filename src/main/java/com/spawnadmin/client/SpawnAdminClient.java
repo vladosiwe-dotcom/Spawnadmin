@@ -8,6 +8,8 @@ import com.spawnadmin.registry.ModSounds;
 import net.minecraft.client.Minecraft;
 import net.minecraft.sounds.Music;
 import net.neoforged.neoforge.client.event.SelectMusicEvent;
+import net.neoforged.neoforge.client.event.RenderGuiLayerEvent;
+import net.neoforged.neoforge.client.event.RenderHandEvent;
 import net.minecraft.client.renderer.item.ItemProperties;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
@@ -43,6 +45,16 @@ public final class SpawnAdminClient {
         });
         bus.addListener((ClientPlayerNetworkEvent.LoggingOut e) -> ClientSkyEvents.INSTANCE.clear());
         bus.addListener(SpawnAdminClient::selectMusic);
+        bus.addListener((RenderGuiLayerEvent.Pre e) -> {
+            if (ClientSkyEvents.INSTANCE.hideHud()) {
+                e.setCanceled(true);
+            }
+        });
+        bus.addListener((RenderHandEvent e) -> {
+            if (ClientSkyEvents.INSTANCE.hideHud()) {
+                e.setCanceled(true);
+            }
+        });
     }
 
     /** Quiet piano in the realm (even in creative mode); silence while the sky score plays. */

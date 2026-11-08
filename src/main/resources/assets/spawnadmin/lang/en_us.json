@@ -23,5 +23,7 @@
   "commands.spawnadmin.cancel.failed": "No summoning to cancel",
   "subtitles.spawnadmin.clock_tick": "A clock ticks",
   "subtitles.spawnadmin.hour_strike": "The hour strikes",
-  "subtitles.spawnadmin.clock_halt": "The clock stops"
+  "subtitles.spawnadmin.clock_halt": "The clock stops",
+  "commands.spawnadmin.return": "Sent %s player(s) back to where they were taken",
+  "commands.spawnadmin.return.failed": "Nobody to send back: the player is not in the realm"
 }

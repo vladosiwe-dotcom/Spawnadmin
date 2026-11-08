@@ -30,6 +30,10 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
     private static final double HEARING_RANGE = 260.0;
 
     private final Map<Integer, ClientSkyEvent> events = new LinkedHashMap<>();
+    /** Keeps the HUD hidden through the white-out after the teleport (the old level is gone by then). */
+    private long hudHiddenUntil;
+    /** Score that keeps playing after its event was left behind (the summoner carried away). */
+    private SoundInstance lingeringTheme;
     private int idleTicks;
 
     private ClientSkyEvents() {
@@ -67,9 +71,39 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
         }
     }
 
+    /**
+     * The summoner sees nothing but the sky: no hotbar, crosshair, hand, chat or messages, from the
+     * moment the sky lights up until they have arrived beyond it.
+     */
+    boolean hideHud() {
+        if (System.currentTimeMillis() < hudHiddenUntil) {
+            return true;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return false;
+        }
+        for (ClientSkyEvent event : events.values()) {
+            if (event.state.targetEntityId() != mc.player.getId()) {
+                continue;
+            }
+            double t = event.time(0);
+            if (t >= SkyTimeline.GLOW && t < SkyTimeline.TELEPORT + 2 && t < event.restoreAt()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** True while a sky event is close enough that its score should replace the game music. */
     boolean scoreActive() {
         Minecraft mc = Minecraft.getInstance();
+        if (lingeringTheme != null) {
+            if (mc.getSoundManager().isActive(lingeringTheme)) {
+                return true;
+            }
+            lingeringTheme = null;
+        }
         if (mc.player == null) {
             return false;
         }
@@ -93,6 +127,8 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
     void clear() {
         events.values().forEach(ClientSkyEvents::stopTheme);
         events.clear();
+        hudHiddenUntil = 0;
+        lingeringTheme = null;
         SceneCopy.release();
         ScreenFlash.clear();
     }
@@ -105,6 +141,10 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
         while (it.hasNext()) {
             ClientSkyEvent event = it.next();
             if (event.level != level) {
+                // Carried into another dimension: let the score finish its resolution there.
+                if (event.theme != null) {
+                    lingeringTheme = event.theme;
+                }
                 it.remove();
                 continue;
             }
@@ -219,6 +259,7 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
             }
             if (t >= SkyTimeline.TELEPORT - 3) {
                 ScreenFlash.whiteOut(700, 1600);
+                hudHiddenUntil = System.currentTimeMillis() + 2600;
             }
         }
     }

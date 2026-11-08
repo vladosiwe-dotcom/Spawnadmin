@@ -23,5 +23,7 @@
   "commands.spawnadmin.cancel.failed": "Нечего отменять",
   "subtitles.spawnadmin.clock_tick": "Тикают часы",
   "subtitles.spawnadmin.hour_strike": "Бьёт час",
-  "subtitles.spawnadmin.clock_halt": "Часы останавливаются"
+  "subtitles.spawnadmin.clock_halt": "Часы останавливаются",
+  "commands.spawnadmin.return": "Возвращено туда, откуда забрали: %s",
+  "commands.spawnadmin.return.failed": "Некого возвращать: игрок не в измерении администратора"
 }

@@ -20,6 +20,7 @@ import java.util.function.Predicate;
  * /heaven enter [players]  – into the administrator's realm, always through the full sky
  *                            animation (only the silent wait is skipped); there is no instant path
  * /heaven exit [players]   – back to the saved return point
+ * /heaven return <players> – send the named players back to the spot where the hand took them
  * /heaven cancel [players] – abort events (in this dimension, or of the given players)
  */
 public final class HeavenCommand {
@@ -41,6 +42,9 @@ public final class HeavenCommand {
                         .executes(ctx -> run(ctx, List.of(ctx.getSource().getPlayerOrException()), HeavenCommand::exit, "exit"))
                         .then(Commands.argument("targets", EntityArgument.players())
                                 .executes(ctx -> run(ctx, EntityArgument.getPlayers(ctx, "targets"), HeavenCommand::exit, "exit"))))
+                .then(Commands.literal("return")
+                        .then(Commands.argument("targets", EntityArgument.players())
+                                .executes(ctx -> run(ctx, EntityArgument.getPlayers(ctx, "targets"), HeavenCommand::exit, "return"))))
                 .then(Commands.literal("cancel")
                         .executes(ctx -> {
                             int n = SkyEventManager.cancelAll(ctx.getSource().getLevel());
