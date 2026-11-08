@@ -70,5 +70,57 @@
         "attenuation_distance": 256
       }
     ]
+  },
+  "clock_tick": {
+    "subtitle": "subtitles.spawnadmin.clock_tick",
+    "sounds": [
+      {
+        "name": "spawnadmin:clock_tick",
+        "attenuation_distance": 24
+      }
+    ]
+  },
+  "clock_tock": {
+    "subtitle": "subtitles.spawnadmin.clock_tick",
+    "sounds": [
+      {
+        "name": "spawnadmin:clock_tock",
+        "attenuation_distance": 24
+      }
+    ]
+  },
+  "hour_strike": {
+    "subtitle": "subtitles.spawnadmin.hour_strike",
+    "sounds": [
+      {
+        "name": "spawnadmin:hour_strike",
+        "attenuation_distance": 256
+      }
+    ]
+  },
+  "clock_halt": {
+    "subtitle": "subtitles.spawnadmin.clock_halt",
+    "sounds": [
+      {
+        "name": "spawnadmin:clock_halt",
+        "attenuation_distance": 256
+      }
+    ]
+  },
+  "theme_summoning": {
+    "sounds": [
+      {
+        "name": "spawnadmin:theme_summoning",
+        "stream": true
+      }
+    ]
+  },
+  "music.admin_realm": {
+    "sounds": [
+      {
+        "name": "spawnadmin:music_admin_realm",
+        "stream": true
+      }
+    ]
   }
 }

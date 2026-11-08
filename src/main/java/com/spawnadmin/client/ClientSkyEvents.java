@@ -53,15 +53,45 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
             events.put(payload.id(), event);
         } else {
             event.state = payload;
+            // Aborted before the teleport: the score no longer matches what happens, cut it.
+            if (payload.restoreAt() < SkyTimeline.RESTORE) {
+                stopTheme(event);
+            }
         }
+    }
+
+    private static void stopTheme(ClientSkyEvent event) {
+        if (event.theme != null) {
+            Minecraft.getInstance().getSoundManager().stop(event.theme);
+            event.theme = null;
+        }
+    }
+
+    /** True while a sky event is close enough that its score should replace the game music. */
+    boolean scoreActive() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return false;
+        }
+        for (ClientSkyEvent event : events.values()) {
+            double d = mc.player.position().distanceTo(new Vec3(event.state.cx(), event.state.cy(), event.state.cz()));
+            if (d < HEARING_RANGE * 1.2) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
     public void onEnd(SkyEventEndPayload payload) {
-        events.remove(payload.id());
+        ClientSkyEvent event = events.remove(payload.id());
+        if (event != null) {
+            stopTheme(event);
+        }
     }
 
     void clear() {
+        events.values().forEach(ClientSkyEvents::stopTheme);
         events.clear();
         SceneCopy.release();
         ScreenFlash.clear();
@@ -110,23 +140,33 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
             default -> null;
         };
         if (sound != null) {
-            playSky(event, sound);
+            playSky(event, sound, SoundSource.AMBIENT);
+        }
+        if (phase == SkyTimeline.Phase.GLOW) {
+            // The hour has come: the clock strikes and the score begins.
+            playSky(event, ModSounds.HOUR_STRIKE.get(), SoundSource.AMBIENT);
+            Minecraft.getInstance().getMusicManager().stopPlaying();
+            event.theme = playSky(event, ModSounds.THEME_SUMMONING.get(), SoundSource.MUSIC);
+        } else if (phase == SkyTimeline.Phase.FREEZE) {
+            playSky(event, ModSounds.CLOCK_HALT.get(), SoundSource.AMBIENT);
         }
     }
 
     /** The sky is everywhere: play without attenuation, scaled by distance to the event. */
-    private void playSky(ClientSkyEvent event, SoundEvent sound) {
+    private SoundInstance playSky(ClientSkyEvent event, SoundEvent sound, SoundSource source) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) {
-            return;
+            return null;
         }
         double d = mc.player.position().distanceTo(new Vec3(event.state.cx(), event.state.cy(), event.state.cz()));
         float volume = (float) Math.max(0, Math.min(1, 1.25 - d / HEARING_RANGE));
         if (volume <= 0.01f) {
-            return;
+            return null;
         }
-        mc.getSoundManager().play(new SimpleSoundInstance(sound.getLocation(), SoundSource.AMBIENT, volume, 1.0f,
-                SoundInstance.createUnseededRandom(), false, 0, SoundInstance.Attenuation.NONE, 0, 0, 0, true));
+        SoundInstance instance = new SimpleSoundInstance(sound.getLocation(), source, volume, 1.0f,
+                SoundInstance.createUnseededRandom(), false, 0, SoundInstance.Attenuation.NONE, 0, 0, 0, true);
+        mc.getSoundManager().play(instance);
+        return instance;
     }
 
     /**

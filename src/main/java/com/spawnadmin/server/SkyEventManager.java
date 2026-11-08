@@ -5,6 +5,7 @@ import com.spawnadmin.SpawnAdminConfig;
 import com.spawnadmin.network.SkyEventEndPayload;
 import com.spawnadmin.network.SpawnAdminNetwork;
 import com.spawnadmin.realm.AdminRealm;
+import com.spawnadmin.registry.ModSounds;
 import com.spawnadmin.sky.SkyTimeline;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -14,6 +15,7 @@ import net.neoforged.neoforge.common.NeoForgeMod;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
@@ -153,6 +155,7 @@ public final class SkyEventManager {
         while (pending.hasNext()) {
             Map.Entry<UUID, Long> e = pending.next();
             if (now < e.getValue()) {
+                tickClock(server, e.getKey(), e.getValue() - now);
                 continue;
             }
             pending.remove();
@@ -171,6 +174,21 @@ public final class SkyEventManager {
                 it.remove();
             }
         }
+    }
+
+    /** The hidden wait is silent for the eyes only: a clock counts down the seconds. */
+    private static void tickClock(MinecraftServer server, UUID uuid, long remaining) {
+        if (remaining % 20 != 0) {
+            return;
+        }
+        ServerPlayer player = server.getPlayerList().getPlayer(uuid);
+        if (player == null) {
+            return;
+        }
+        boolean tock = (remaining / 20) % 2 == 0;
+        float volume = remaining <= 60 ? 1.4f : 1.0f;
+        player.level().playSound(null, player.getX(), player.getY(), player.getZ(),
+                (tock ? ModSounds.CLOCK_TOCK : ModSounds.CLOCK_TICK).get(), SoundSource.AMBIENT, volume, 1.0f);
     }
 
     /** @return true when the event is finished and must be removed. */

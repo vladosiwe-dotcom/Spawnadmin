@@ -20,5 +20,8 @@
   "subtitles.spawnadmin.hand_appear": "A hand of light descends",
   "subtitles.spawnadmin.grab_teleport": "Carried beyond the sky",
   "subtitles.spawnadmin.sky_restore": "The sky mends",
-  "commands.spawnadmin.cancel.failed": "No summoning to cancel"
+  "commands.spawnadmin.cancel.failed": "No summoning to cancel",
+  "subtitles.spawnadmin.clock_tick": "A clock ticks",
+  "subtitles.spawnadmin.hour_strike": "The hour strikes",
+  "subtitles.spawnadmin.clock_halt": "The clock stops"
 }

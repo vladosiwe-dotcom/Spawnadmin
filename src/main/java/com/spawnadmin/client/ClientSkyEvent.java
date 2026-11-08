@@ -16,6 +16,8 @@ final class ClientSkyEvent {
     final SkyScene.ShardPose[] poses;
     final double[] free;
     SkyTimeline.Phase lastPhase;
+    /** The score playing for this event, stopped if the event is aborted. */
+    net.minecraft.client.resources.sounds.SoundInstance theme;
 
     ClientSkyEvent(SkyEventSyncPayload state, ClientLevel level) {
         this.id = state.id();

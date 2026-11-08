@@ -2,7 +2,12 @@ package com.spawnadmin.client;
 
 import com.spawnadmin.SpawnAdmin;
 import com.spawnadmin.network.SpawnAdminNetwork;
+import com.spawnadmin.realm.AdminRealm;
 import com.spawnadmin.registry.ModItems;
+import com.spawnadmin.registry.ModSounds;
+import net.minecraft.client.Minecraft;
+import net.minecraft.sounds.Music;
+import net.neoforged.neoforge.client.event.SelectMusicEvent;
 import net.minecraft.client.renderer.item.ItemProperties;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
@@ -37,6 +42,19 @@ public final class SpawnAdminClient {
             }
         });
         bus.addListener((ClientPlayerNetworkEvent.LoggingOut e) -> ClientSkyEvents.INSTANCE.clear());
+        bus.addListener(SpawnAdminClient::selectMusic);
+    }
+
+    /** Quiet piano in the realm (even in creative mode); silence while the sky score plays. */
+    private static final Music REALM_MUSIC = new Music(ModSounds.MUSIC_ADMIN_REALM, 200, 600, true);
+
+    private static void selectMusic(SelectMusicEvent event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (ClientSkyEvents.INSTANCE.scoreActive()) {
+            event.setMusic(null);
+        } else if (mc.level != null && mc.level.dimension().equals(AdminRealm.DEFAULT_REALM) && mc.screen == null) {
+            event.setMusic(REALM_MUSIC);
+        }
     }
 
     private static void registerShaders(RegisterShadersEvent event) {
