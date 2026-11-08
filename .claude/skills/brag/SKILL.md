@@ -1,0 +1,75 @@
+---
+name: brag
+description: Memorialize something you just built by generating a self-contained "showcase" page for it — a persuasive, good-looking deep dive: what it is, why it's impressive, how it works — with a screenshot if one can be found or captured, and links to related showcase pages. This is the sales/hype-leaning counterpart to /write-post (which drafts a neutral, no-BS technical post); reach for /brag when you want it to sell. Fast by design, like /idea: ask only what's needed, build the page, don't turn it into a project. Triggers on `/brag <subject>`, "brag about this", "make a showcase page for X", "write up what I just did".
+user_invocable: true
+args: "<subject> — the thing you're proud of (a feature, fix, trick, or artifact)"
+---
+
+# /brag — memorialize something clever, fast
+
+Builds one deep-dive showcase page about the subject and links it into a running index. Treat it
+like `/idea`: capture quickly, ask only when blocked, never spiral into a rabbit hole.
+
+## Output location (resolve once, up front)
+
+- Default: a local `showcase/` directory at the repo root — `showcase/<YYYY-MM-DD>-<slug>.html`
+  plus a `showcase/index.html` that lists every page.
+- If the project defines a showcase/demo output another way (a `SHOWCASE_DIR` env var, a
+  `showcase/.config`, or an existing `showcase/`/`demo/` dir), use that instead.
+- Deploying to a live site is **optional and separate** — see step 6. Never assume a deploy target.
+
+## Steps
+
+1. **Take the subject.** `<subject>` is the thing being bragged about. Infer a short `slug`
+   (kebab-case) and a working title from it.
+
+2. **Clarify only if needed (0–2 questions, then stop).** Ask only when you can't build a good page
+   without the answer — e.g. what makes it notable, where the code/artifact lives, or who it's for
+   (a teammate vs. a public demo). Skip straight to building if context already answers these. Don't
+   interview for polish.
+
+3. **Gather the substance (read-only, quick).** Pull the concrete details the page needs:
+   - `git log --oneline -10` and `git diff --stat` (and `git show` on the relevant commit) to see
+     what actually changed.
+   - Read the key file(s) the subject touches — enough to describe the mechanism honestly, not a
+     full audit. Prefer `path:line` specifics over hand-waving.
+   - Note a genuine before/after or the problem it solves, if there is one.
+
+4. **Handle the screenshot.** A showcase page wants one visual.
+   - Look for an existing image tied to the subject: a recent file under `screenshots/`, `docs/`,
+     `assets/`, or the repo's image dirs; an artifact the work just produced.
+   - If the subject is a running UI, a browser tool is available, and you know the URL, offer to
+     capture one.
+   - Otherwise ask for an image path, but don't block on it — use a captioned placeholder and note
+     a screenshot can be added later.
+   - Copy any image into the showcase dir (e.g. `showcase/assets/<slug>.<ext>`) and reference it
+     relatively — never hotlink an external or local absolute path.
+
+5. **Build the page.** Write a single self-contained HTML file (inline CSS, no external requests) to
+   `<output>/<date>-<slug>.html`, in order:
+   - Title + one-line summary of what it is.
+   - **Why it's impressive** — sell the win; this is a showcase. Keep it *true* — every claim must
+     hold up. (For a deliberately neutral technical write-up instead, that's `/write-post`.)
+   - **How it works** — the mechanism, with `path:line` or a short code snippet where it helps.
+   - The screenshot (or placeholder).
+   - **Related** — 1–3 existing showcase pages whose slug/tags genuinely overlap this subject (scan
+     the index; skip the section if none).
+   - A small footer: date, and the commit SHA it describes if there is one.
+   Then update `<output>/index.html`: add/refresh this page's card (title, date, one-liner, thumb),
+   newest first. Create the index if it doesn't exist.
+
+6. **Offer to publish (optional, never automatic).** If the project has a configured way to publish
+   the showcase (a deploy script, a `SHOWCASE_DEPLOY_CMD`, a publish skill like a `/mock`-style HTTP
+   PUT), offer to run it and show the resulting URL. Otherwise say the page is local and stop. Do
+   not invent a deploy path or push anywhere unprompted.
+
+7. **Confirm and get out of the way.** Print the file path (and URL if deployed), offer to open it.
+   Don't propose follow-up work — the point was to memorialize, not to start a new task.
+
+## Sell it, but keep it true
+
+- Lead with impact — but every claim has to hold up. Impressive-and-accurate, never
+  impressive-and-invented. If the clever part has a real caveat, a confident one-line "known limit"
+  reads better than a claim that falls apart on inspection.
+- Read-only except for the showcase files (and a copied screenshot). Never edit the code you're
+  bragging about, and never deploy without the explicit offer in step 6.
