@@ -15,7 +15,7 @@ public final class SpawnAdminConfig {
         ModConfigSpec.Builder b = new ModConfigSpec.Builder();
         b.push("summoning");
         HIDDEN_DELAY_SECONDS = b.comment("Silent wait between blowing the horn and the sky starting to glow.")
-                .defineInRange("hiddenDelaySeconds", 10, 0, 600);
+                .defineInRange("hiddenDelaySeconds", 15, 0, 600);
         HORN_COOLDOWN_SECONDS = b.comment("Cooldown of the Horn of the Heavens after a summoning.")
                 .defineInRange("hornCooldownSeconds", 60, 0, 86400);
         MAX_EVENTS_PER_DIMENSION = b.comment("How many sky events may run at once in one dimension.")

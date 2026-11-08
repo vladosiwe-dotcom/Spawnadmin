@@ -1,9 +1,12 @@
 {
-  "vertex": "spawnadmin:sky_world",
+  "vertex": "spawnadmin:sky_glass",
   "fragment": "spawnadmin:sky_glass",
   "samplers": [
     {
       "name": "Sampler0"
+    },
+    {
+      "name": "Sampler1"
     }
   ],
   "uniforms": [
@@ -72,6 +75,39 @@
     },
     {
       "name": "GlassParams",
+      "type": "float",
+      "count": 4,
+      "values": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "SkyColor",
+      "type": "float",
+      "count": 4,
+      "values": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "HorizonColor",
+      "type": "float",
+      "count": 4,
+      "values": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "CloudColor",
       "type": "float",
       "count": 4,
       "values": [

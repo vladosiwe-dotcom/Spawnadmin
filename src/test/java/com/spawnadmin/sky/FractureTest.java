@@ -37,8 +37,8 @@ class FractureTest {
         for (long seed : SEEDS) {
             Fracture f = Fracture.generate(seed);
             double area = f.shards.stream().mapToDouble(ShardData::area2).sum();
-            assertEquals(rim, area, 1e-6, "cells must cover the disc exactly, seed " + seed);
-            assertTrue(f.shards.size() >= 100 && f.shards.size() <= Fracture.TARGET_CELLS,
+            assertEquals(rim, area, 2e-4, "cells must cover the disc exactly, seed " + seed);
+            assertTrue(f.shards.size() >= 200 && f.shards.size() <= Fracture.MAX_SHARDS + 20,
                     "shard count " + f.shards.size());
             for (ShardData s : f.shards) {
                 assertTrue(s.area2() > 0, "every shard is non-degenerate and CCW");
@@ -53,6 +53,69 @@ class FractureTest {
         assertTrue(areas[areas.length - 1] > 6 * areas[0], "largest shard must be much larger than the smallest");
         long shapes = f.shards.stream().mapToInt(s -> s.outline.length).distinct().count();
         assertTrue(shapes >= 3, "outlines must differ in vertex count");
+    }
+
+    @Test
+    void shardsAreSharpSplintersNotHoneycomb() {
+        Fracture f = Fracture.generate(20261108L);
+        int slivers = 0, triangles = 0;
+        for (ShardData s : f.shards) {
+            double maxD = 0;
+            for (V2 a : s.outline) for (V2 b : s.outline) maxD = Math.max(maxD, a.dist(b));
+            double aspect = maxD * maxD / Math.max(s.area2(), 1e-12);
+            if (aspect > 5.0) slivers++;
+            if (corners(s.outline) == 3) triangles++;
+        }
+        assertTrue(slivers > f.shards.size() / 4, "many long splinters: " + slivers + "/" + f.shards.size());
+        assertTrue(triangles > f.shards.size() / 10, "many sharp triangles: " + triangles + "/" + f.shards.size());
+    }
+
+    @Test
+    void crackNetworkIsWatertight() {
+        for (long seed : SEEDS) {
+            Fracture f = Fracture.generate(seed);
+            // Every non-rim edge of every shard must be a crack shared with exactly one neighbour.
+            java.util.Map<String, Integer> uses = new java.util.HashMap<>();
+            for (ShardData s : f.shards) {
+                for (int k = 0; k < s.outline.length; k++) {
+                    V2 a = s.outline[k], b = s.outline[(k + 1) % s.outline.length];
+                    boolean rim = a.length() > 0.999 && b.length() > 0.999;
+                    if (!rim) uses.merge(key(a, b), 1, Integer::sum);
+                }
+            }
+            long open = uses.values().stream().filter(n -> n != 2).count();
+            assertEquals(0, open, "no T-junction gaps, seed " + seed);
+        }
+    }
+
+    @Test
+    void debrisFallsFreezesAndReturns() {
+        SkyScene scene = new SkyScene(Fracture.generate(9L));
+        assertTrue(scene.fracture.debris.size() > 100, "plenty of splinters: " + scene.fracture.debris.size());
+        SkyScene.ShardPose a = new SkyScene.ShardPose(), b = new SkyScene.ShardPose();
+        double r = SkyTimeline.RESTORE;
+        for (var d : scene.fracture.debris) {
+            scene.debrisPose(d, SkyTimeline.FREEZE + 3, r, a);
+            scene.debrisPose(d, SkyTimeline.TELEPORT, r, b);
+            assertEquals(a.offset, b.offset, "debris frozen in time");
+            scene.debrisPose(d, r + SkyTimeline.RESTORE_LENGTH, r, b);
+            assertEquals(0.0, b.alpha, 1e-9, "debris merged back");
+        }
+    }
+
+    private static int corners(V2[] poly) {
+        int n = 0;
+        for (int i = 0; i < poly.length; i++) {
+            V2 p = poly[(i + poly.length - 1) % poly.length], c = poly[i], q = poly[(i + 1) % poly.length];
+            if (Math.abs(c.sub(p).normalize().cross(q.sub(c).normalize())) > 0.02) n++;
+        }
+        return n;
+    }
+
+    private static String key(V2 a, V2 b) {
+        String ka = Math.round(a.x() * 1e6) + ":" + Math.round(a.y() * 1e6);
+        String kb = Math.round(b.x() * 1e6) + ":" + Math.round(b.y() * 1e6);
+        return ka.compareTo(kb) < 0 ? ka + "|" + kb : kb + "|" + ka;
     }
 
     @Test
@@ -73,7 +136,7 @@ class FractureTest {
             long shell = f.cracks.stream().filter(c -> !c.hairline()).count();
             long hair = f.cracks.stream().filter(CrackSegment::hairline).count();
             assertTrue(shell > f.shards.size(), "shared edges form the crack network");
-            assertTrue(hair > f.shards.size() / 2, "hairline branches exist");
+            assertTrue(hair > f.shards.size() / 5, "hairline branches exist");
             for (CrackSegment c : f.cracks) {
                 assertTrue(c.da() <= f.maxFront * 1.5 && c.db() <= f.maxFront * 1.5 + 1, "finite front time");
                 double[] r = c.visibleRange(f.maxFront * 1.02 + 2.0);

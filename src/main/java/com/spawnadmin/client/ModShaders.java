@@ -21,7 +21,7 @@ public final class ModShaders {
     static void register(RegisterShadersEvent event) throws IOException {
         var rp = event.getResourceProvider();
         var world = DefaultVertexFormat.POSITION_TEX_COLOR_NORMAL;
-        event.registerShader(new ShaderInstance(rp, SpawnAdmin.id("sky_glass"), world), s -> glass = s);
+        event.registerShader(new ShaderInstance(rp, SpawnAdmin.id("sky_glass"), DefaultVertexFormat.NEW_ENTITY), s -> glass = s);
         event.registerShader(new ShaderInstance(rp, SpawnAdmin.id("sky_crack"), world), s -> crack = s);
         event.registerShader(new ShaderInstance(rp, SpawnAdmin.id("sky_rift"), world), s -> rift = s);
         event.registerShader(new ShaderInstance(rp, SpawnAdmin.id("sky_hand"), world), s -> hand = s);

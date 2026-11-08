@@ -37,10 +37,12 @@ public final class ShardData {
     public final double restoreLength;
     /** Per-shard random number for shading variation. */
     public final double tint;
+    /** Glass thickness of this shard (real panes break into pieces of slightly different depth). */
+    public final double thickness;
 
     ShardData(int index, V2[] outline, V2 centroid2, V3 origin, V3 normal, V3[] outer, V3[] inner, double impactDist,
               boolean detaches, boolean hovers, double detachDelay, V3 velocity, V3 spinAxis, double spinSpeed,
-              V3 hoverOffset, double hoverTilt, double restoreStart, double restoreLength, double tint) {
+              V3 hoverOffset, double hoverTilt, double restoreStart, double restoreLength, double tint, double thickness) {
         this.index = index;
         this.outline = outline;
         this.centroid2 = centroid2;
@@ -60,6 +62,7 @@ public final class ShardData {
         this.restoreStart = restoreStart;
         this.restoreLength = restoreLength;
         this.tint = tint;
+        this.thickness = thickness;
     }
 
     /** Area of the outline in disc units². */

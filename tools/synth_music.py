@@ -216,91 +216,148 @@ def clock_halt():
     return normalize(x, 0.85)
 
 
-# ------------------------------------------------------------------ theme (stereo, 28 s)
+# ------------------------------------------------------------------ theme (stereo, 33 s)
+
+def music_box(f, dur=1.6, amp=1.0, detune=0.0):
+    """Music-box tine: bright, quick decay; `detune` bends the pitch down while it rings (warped)."""
+    t = np.arange(secs(dur)) / SR
+    bend = 1.0 - detune * (1 - np.exp(-t / 0.4))
+    phase = 2 * np.pi * np.cumsum(f * bend) / SR
+    x = np.sin(phase) * np.exp(-t / 0.55) + 0.3 * np.sin(3.01 * phase) * np.exp(-t / 0.18)
+    x += 0.12 * np.sin(5.4 * phase) * np.exp(-t / 0.06)
+    return x * env(len(t), 0.001, 0.05) * amp
+
+
+def tape_stop(x, at, length):
+    """Everything after `at` slows to a halt over `length` seconds, like a tape machine losing power."""
+    i0, n = secs(at), secs(length)
+    t = np.arange(n) / n
+    rate = (1 - t) ** 1.6
+    pos = i0 + np.cumsum(rate)
+    out = x.copy()
+    for ch in range(x.shape[1]):
+        out[i0:i0 + n, ch] = np.interp(pos, np.arange(len(x)), x[:, ch]) * (1 - t ** 3)
+    out[i0 + n:] = 0
+    return out
+
+
+def drum(f0=72.0, dur=0.9, amp=1.0):
+    t = np.arange(secs(dur)) / SR
+    f = f0 * (0.6 + 0.4 * np.exp(-t / 0.08))
+    x = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t / 0.28)
+    x += lp(RNG.standard_normal(len(t)), 900) * np.exp(-t / 0.02) * 0.5
+    return x * amp
+
+
+def shepard(dur, start_rate=0.15, end_rate=1.2, amp=1.0):
+    """Endlessly rising tone: octave-spaced partials gliding up under a fixed bell-shaped envelope."""
+    t = np.arange(secs(dur)) / SR
+    rate = start_rate + (end_rate - start_rate) * (t / dur) ** 2
+    pos = np.cumsum(rate) / SR  # octaves travelled
+    out = np.zeros_like(t)
+    for k in range(7):
+        octv = (k + pos) % 7.0
+        f = 55.0 * 2 ** octv
+        w = np.exp(-((octv - 3.5) / 1.4) ** 2)
+        out += w * np.sin(2 * np.pi * np.cumsum(f) / SR)
+    return out * env(len(t), 0.4, 0.15) * amp
+
 
 def theme():
-    total = 28.0
-    pre = buf(total)    # everything before the freeze; gated to silence when time stops
-    post = buf(total)   # after the freeze
-    freeze = 11.75
+    """33 s score, aligned to SkyTimeline: GLOW 0, CRACK 2, SHATTER 7.5, FALL 9, FREEZE 15,
+    HAND 16.5, GRAB 19.5, LIFT 20.5, TELEPORT 22.75, RESTORE 23.25 .. 32.25."""
+    total = 33.5
+    pre = buf(total)
+    post = buf(total)
+    FREEZE = 15.0
 
-    # GLOW: the sky lights up. Drone and a first high note.
-    add(pre, sine(hz("D2"), 12.0, 0.5, 2.0, 0.5), 0.0)
-    pre[: secs(5)] += pad([hz("D3"), hz("A3"), hz("F4")], 5.0, 0.6, 1.8, 1.5)
-    add(pre, celesta(hz("A5"), 3.0, 0.5), 0.6, 0.3)
+    # GLOW: an innocent music-box tune, as if nothing could go wrong.
+    tune = ["E5", "G5", "C6", "B5", "G5", "A5", "G5", "E5", "D5", "E5", "G5", "C6", "D6", "B5", "G5", "C6"]
+    beat = 0.36
+    for i, n in enumerate(tune):
+        at = 0.15 + i * beat
+        # From CRACK on the box goes out of tune, more and more.
+        warp = max(0.0, (at - 2.0) / 5.0) * 0.06
+        if i == 9:
+            n = "F#5"  # the first wrong note
+        add(pre, music_box(hz(n), 1.6, 0.45, warp), at, -0.3 + 0.6 * (i % 2))
+    # A cello drone creeping up chromatically under the cracks.
+    for i, n in enumerate(["D2", "Eb2", "E2", "F2"]):
+        add(pre, sine(hz(n), 1.6, 0.35, 0.5, 0.6) + 0.5 * sine(hz(n) * 2, 1.6, 0.12, 0.5, 0.6), 2.0 + i * 1.35, -0.2)
+    # Irregular glass pings in 5/8, the cracks running.
+    at = 2.2
+    for i in range(14):
+        add(pre, celesta(hz(["A6", "G#6", "D7", "C#7"][i % 4]), 1.0, 0.22), at, float(RNG.uniform(-0.9, 0.9)))
+        at += [0.3, 0.3, 0.45, 0.3, 0.45][i % 5] * (1 - i * 0.02)
 
-    # CRACK: a sparse glass motif, the cracks running across the dome.
-    motif = [(2.0, "D5", -0.4), (2.6, "F5", 0.2), (3.2, "A5", 0.5), (3.8, "E5", -0.2),
-             (4.6, "D5", -0.3), (4.9, "F5", 0.0), (5.2, "A5", 0.3), (5.5, "C6", 0.6),
-             (6.1, "G5", -0.5), (6.6, "A5", 0.4)]
-    for at, n, pan in motif:
-        add(pre, celesta(hz(n), 2.5, 0.42), at, pan)
-    p = pad([hz("Bb2"), hz("F3"), hz("A3"), hz("D4")], 3.0, 0.55, 1.0, 1.0)
-    pre[secs(4.3):secs(4.3) + len(p)] += p
+    pre = reverb(pre, 3.0, 0.38, 6000, seed=11)[: secs(total)]
+    # SHATTER: sudden silence...
+    pre[secs(7.5):] = 0
 
-    # SHATTER: tension, heartbeat pulses, rising swell.
-    p = pad([hz("A2"), hz("E3"), hz("D4"), hz("G4")], 1.6, 0.8, 1.2, 0.2, cutoff=2400)
-    pre[secs(6.8):secs(6.8) + len(p)] += p
-    for at in (7.0, 7.5, 8.0):
-        add(pre, sine(hz("D1"), 0.45, 0.9, 0.005, 0.35), at)
-    swell = hp(RNG.standard_normal(secs(1.4)), 3000) * np.linspace(0, 1, secs(1.4)) ** 3 * 0.25
-    add(pre, swell, 6.85)
+    # ...then a reversed chord sucking everything in.
+    rev = buf(1.5)
+    for n in ("D3", "A3", "Eb4", "G4", "D5"):
+        add(rev, piano(hz(n), 1.5, 0.5), 0.0, 0.0)
+    rev = reverb(rev, 2.0, 0.5, 5000, seed=12)[: secs(1.5)][::-1]
+    pre[secs(8.1):secs(8.1) + len(rev)] += rev * 1.4
 
-    # FALL: the sky breaks, a wide chord and a cascade of falling notes.
-    p = pad([hz("Bb1"), hz("F2"), hz("Bb2"), hz("D3"), hz("A3"), hz("C4"), hz("F4")], 3.6, 1.1, 0.05, 1.2, cutoff=2200)
-    pre[secs(8.25):secs(8.25) + len(p)] += p
-    scale = ["D", "E", "F", "G", "A", "Bb", "C"]
-    at = 8.3
-    step = 0.32
-    for i in range(22):
-        octave = 6 - i // 8
-        n = scale[int(RNG.integers(0, len(scale)))] + str(octave)
-        add(pre, celesta(hz(n), 2.0, 0.38), at, float(RNG.uniform(-0.8, 0.8)))
-        at += step
-        step *= 0.93
+    # FALL: the hit. A dissonant cluster, a sub boom, glass falling down a whole-tone scale over a 7/8 drum.
+    hit = buf(6.5)
+    hit += pad([hz("D1"), hz("D2"), hz("A2"), hz("D3"), hz("Eb3"), hz("F3"), hz("A3"), hz("Eb4")], 6.5, 1.6, 0.01, 2.5, cutoff=2600)
+    add(hit, sine(hz("D1"), 2.5, 1.2, 0.002, 2.0), 0.0)
+    whole = ["C", "D", "E", "F#", "G#", "A#"]
+    at, step, octv = 0.05, 0.11, 7
+    for i in range(46):
+        n = whole[(len(whole) - 1 - i) % len(whole)] + str(max(4, octv - i // 6))
+        add(hit, celesta(hz(n), 1.6, 0.28), at, float(np.sin(i * 1.7)) * 0.85)
+        at += step * (1 + 0.5 * np.sin(i * 0.9))
+        if at > 5.8:
+            break
+    pattern = [0, 0.43, 0.86, 1.07, 1.5, 1.71, 1.93]  # 7/8 accents
+    for bar_i in range(3):
+        for k, off in enumerate(pattern):
+            add(hit, drum(72.0 if k in (0, 3) else 98.0, 0.9, 0.75 if k in (0, 3) else 0.35), 0.3 + bar_i * 2.0 + off, 0.0)
+    hit = reverb(hit, 3.5, 0.35, 5000, seed=13)[: secs(6.5)]
+    i0 = secs(9.0)
+    pre[i0:i0 + len(hit)] += hit
 
-    pre = reverb(pre, 3.8, 0.42, 5500, seed=1)[: secs(total)]
-    gate = np.ones(len(pre))
-    g = secs(freeze)
-    gate[g:g + secs(0.06)] = np.linspace(1, 0, secs(0.06))
-    gate[g + secs(0.06):] = 0
-    pre *= gate[:, None]
+    # FREEZE: the whole score winds down like a tape losing power.
+    pre = tape_stop(pre, FREEZE - 0.15, 0.75)
 
-    # FREEZE: a single suspended tone, as if the sound itself stopped mid-air.
-    frozen = (sine(hz("A5"), 1.6, 0.12, 0.01, 0.4) + sine(hz("E6"), 1.6, 0.06, 0.01, 0.4))
-    add(post, frozen, freeze)
+    # A single suspended tone hangs in the stopped air.
+    add(post, sine(hz("B5"), 1.6, 0.1, 0.3, 0.4) + sine(hz("F6"), 1.6, 0.05, 0.3, 0.4), FREEZE + 0.5)
 
-    # HAND: a choir rises, F major opening towards light.
-    c = choir([hz("F3"), hz("A3"), hz("C4"), hz("F4")], 3.4, 1.4, 1.8, 0.8)
-    post[secs(13.25):secs(13.25) + len(c)] += c
-    add(post, sine(hz("F1"), 3.4, 0.45, 2.0, 0.8), 13.25)
-
-    # GRAB + LIFT: rising arpeggio and choir to a bright D major at the teleport.
-    c = choir([hz("A3"), hz("C#4"), hz("E4"), hz("A4")], 3.3, 1.5, 0.8, 0.4)
-    post[secs(16.25):secs(16.25) + len(c)] += c
-    arp = ["D5", "F#5", "A5", "D6", "E5", "A5", "C#6", "E6", "F#5", "A5", "D6", "F#6"]
-    at = 16.3
-    step = 0.3
-    for i, n in enumerate(arp):
-        add(post, celesta(hz(n), 1.8, 0.33), at, -0.6 + 1.2 * (i % 4) / 3)
-        at += step
-        step *= 0.94
-    for n in ("D4", "F#4", "A4", "D5"):
-        add(post, bell(hz(n), 4.0, 0.25), 19.5, 0.0)
-    add(post, celesta(hz("D6"), 3.0, 0.5), 19.5, 0.0)
-    c = choir([hz("D3"), hz("F#3"), hz("A3"), hz("D4")], 2.0, 1.2, 0.05, 1.6)
+    # HAND: the choir enters in a far, warm key (D minor -> Db major).
+    c = choir([hz("Db3"), hz("F3"), hz("Ab3"), hz("Db4")], 3.2, 1.5, 1.6, 0.3)
+    post[secs(16.5):secs(16.5) + len(c)] += c
+    add(post, sine(hz("Db1"), 3.2, 0.45, 1.6, 0.3), 16.5)
+    # GRAB: an abrupt lift by a semitone, to D major.
+    c = choir([hz("D3"), hz("F#3"), hz("A3"), hz("D4"), hz("F#4")], 1.2, 1.7, 0.03, 0.4)
     post[secs(19.5):secs(19.5) + len(c)] += c
+    # LIFT: an endless rise.
+    sh = shepard(2.25, 0.4, 2.0, 0.22)
+    add(post, sh, 20.5, -0.2)
+    add(post, sh * 0.8, 20.52, 0.2)
 
-    # RESTORE: the motif returns reversed and in major, the sky mends.
-    for at, n, pan in [(20.6, "A5", 0.4), (21.4, "F#5", -0.2), (22.2, "D5", 0.1), (23.1, "E5", -0.4),
-                       (23.9, "F#5", 0.3), (25.0, "A4", 0.0), (25.8, "D5", -0.1)]:
-        add(post, celesta(hz(n), 3.0, 0.4), at, pan)
-    p = pad([hz("D3"), hz("A3"), hz("C#4"), hz("E4"), hz("F#4")], 7.6, 0.55, 2.5, 3.5, cutoff=1200)
-    post[secs(20.2):secs(20.2) + len(p)] += p
+    # TELEPORT: a breath of silence, then the bells.
+    post[secs(22.75):secs(23.0)] *= np.linspace(1, 0, secs(0.25))[:, None]
+    for n in ("D4", "A4", "D5", "F#5"):
+        add(post, bell(hz(n), 4.0, 0.22), 23.0, 0.0)
 
-    post = reverb(post, 4.5, 0.45, 5000, seed=2)[: secs(total)]
+    # RESTORE: the music box again, first backwards, then forwards in a new key.
+    box = buf(4.5)
+    for i, n in enumerate(tune[:12]):
+        add(box, music_box(hz(n), 1.6, 0.42), i * 0.32, -0.3 + 0.6 * (i % 2))
+    box = reverb(box, 2.5, 0.4, 6000, seed=14)[: secs(4.5)]
+    post[secs(23.6):secs(23.6) + len(box)] += box[::-1] * 0.9
+    for i, n in enumerate(["F#5", "A#5", "C#6", "F#6", "E#6", "C#6", "A#5", "F#6"]):
+        add(post, music_box(hz(n.replace("E#", "F")), 1.8, 0.38), 28.2 + i * 0.42, -0.3 + 0.6 * (i % 2))
+    p = pad([hz("F#2"), hz("C#3"), hz("A#3"), hz("F#4")], 5.0, 0.5, 1.5, 3.0, cutoff=1300)
+    post[secs(28.0):secs(28.0) + len(p)] += p
+
+    post = reverb(post, 4.0, 0.42, 5000, seed=15)[: secs(total)]
     out = pre + post
-    out *= env(len(out), 0.01, 1.2)[:, None]
+    out *= env(len(out), 0.01, 1.5)[:, None]
     return normalize(out, 0.8)
 
 

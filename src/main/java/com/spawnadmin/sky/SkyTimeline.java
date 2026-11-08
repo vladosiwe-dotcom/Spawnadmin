@@ -8,15 +8,16 @@ package com.spawnadmin.sky;
 public final class SkyTimeline {
     public static final int GLOW = 0;
     public static final int CRACK = 40;
-    public static final int SHATTER = 140;
-    public static final int FALL = 165;
-    public static final int FREEZE = 235;
-    public static final int HAND = 265;
-    public static final int GRAB = 325;
-    public static final int LIFT = 345;
-    public static final int TELEPORT = 390;
-    public static final int RESTORE = 400;
-    public static final int RESTORE_LENGTH = 140;
+    public static final int SHATTER = 150;
+    public static final int FALL = 180;
+    /** Six seconds of falling glass before time stops. */
+    public static final int FREEZE = 300;
+    public static final int HAND = 330;
+    public static final int GRAB = 390;
+    public static final int LIFT = 410;
+    public static final int TELEPORT = 455;
+    public static final int RESTORE = 465;
+    public static final int RESTORE_LENGTH = 180;
 
     /** Time the falling shards keep simulating before the freeze. */
     public static final int FALL_LENGTH = FREEZE - FALL;

@@ -12,12 +12,17 @@ import com.spawnadmin.sky.HandRig;
 import com.spawnadmin.sky.SkyScene;
 import com.spawnadmin.sky.SkyTimeline;
 import com.spawnadmin.sky.geom.CrackSegment;
+import com.spawnadmin.sky.geom.DebrisData;
 import com.spawnadmin.sky.geom.DomeShape;
 import com.spawnadmin.sky.geom.Quat;
 import com.spawnadmin.sky.geom.ShardData;
 import com.spawnadmin.sky.geom.V2;
 import com.spawnadmin.sky.geom.V3;
 import net.minecraft.client.Camera;
+import net.minecraft.client.CloudStatus;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
@@ -108,7 +113,7 @@ final class SkyRenderer {
 
         drawRift(sky, base, glow, t);
         int sceneTex = SceneCopy.capture();
-        drawGlass(sky, base, glow, pulse, stop, sceneTex);
+        drawGlass(sky, base, camera, partial, t, glow, pulse, stop, sceneTex);
         drawCracks(sky, base, t, r, pulse);
         drawHand(sky, base, t, r);
 
@@ -163,7 +168,72 @@ final class SkyRenderer {
 
     // ------------------------------------------------------------------ glass
 
-    private static void drawGlass(ClientSkyEvent sky, V3 base, double glow, double pulse, double stop, int sceneTex) {
+    /** Per-frame view of the real Minecraft sky, so the glass carries the actual sky and clouds. */
+    private static final class SkyView {
+        Vec3 camera;
+        double cloudY;
+        boolean clouds;
+        double cloudRange;
+        double ticks;
+        V3 center;
+    }
+
+    private static final SkyView VIEW = new SkyView();
+
+    private static void prepareSky(ClientSkyEvent sky, Camera camera, float partial, ShaderInstance shader) {
+        Minecraft mc = Minecraft.getInstance();
+        ClientLevel level = mc.level;
+        Vec3 cam = camera.getPosition();
+        Vec3 skyColor = level.getSkyColor(cam, partial);
+        float[] fog = RenderSystem.getShaderFogColor();
+        Vec3 cloudColor = level.getCloudColor(partial);
+        float cloudHeight = level.effects().getCloudHeight();
+        VIEW.camera = cam;
+        VIEW.clouds = !Float.isNaN(cloudHeight) && mc.options.getCloudsType() != CloudStatus.OFF;
+        VIEW.cloudY = cloudHeight + 0.33;
+        VIEW.cloudRange = mc.options.getEffectiveRenderDistance() * 16.0 * 2.0;
+        VIEW.ticks = mc.levelRenderer.getTicks() + partial;
+        VIEW.center = new V3(sky.state.cx(), sky.state.cy(), sky.state.cz());
+        shader.safeGetUniform("SkyColor").set((float) skyColor.x, (float) skyColor.y, (float) skyColor.z, 1f);
+        shader.safeGetUniform("HorizonColor").set(fog[0], fog[1], fog[2], 1f);
+        shader.safeGetUniform("CloudColor").set((float) cloudColor.x, (float) cloudColor.y, (float) cloudColor.z, 0.85f);
+    }
+
+    /**
+     * Emits one glass vertex. {@code rest} is the point's position (relative to the event center)
+     * when the shard sat in the dome: the sky colour and the cloud texel are looked up there, so
+     * the piece of sky travels with the shard. {@code frozenTicks} > 0 freezes the clouds at the
+     * moment the shard broke away.
+     */
+    private static void glassVertex(BufferBuilder buf, V3 p, V3 n, V3 rest, float edge, float edgeGlow, float alpha,
+                                    double frozenTicks, float variation) {
+        V3 world = VIEW.center.add(rest);
+        double dx = world.x() - VIEW.camera.x, dy = world.y() - VIEW.camera.y, dz = world.z() - VIEW.camera.z;
+        double len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        double dirY = dy / Math.max(len, 1e-6);
+        float skyT = (float) SkyScene.smoothstep(-0.02, 0.45, dirY);
+        float u = 0, v = 0, vis = 0;
+        if (VIEW.clouds && dy > 1e-3) {
+            double t = (VIEW.cloudY - VIEW.camera.y) / dy;
+            if (t > 0) {
+                double hx = VIEW.camera.x + dx * t, hz = VIEW.camera.z + dz * t;
+                double horiz = Math.hypot(hx - VIEW.camera.x, hz - VIEW.camera.z);
+                vis = (float) (1 - SkyScene.smoothstep(VIEW.cloudRange * 0.55, VIEW.cloudRange, horiz));
+                double shift = (frozenTicks > 0 ? frozenTicks : VIEW.ticks) * 0.03;
+                u = (float) (((hx + shift) / 12.0) / 256.0 % 1.0);
+                v = (float) ((hz / 12.0 + 0.33) / 256.0 % 1.0);
+            }
+        }
+        buf.addVertex((float) p.x(), (float) p.y(), (float) p.z())
+                .setColor(edge, edgeGlow, skyT, alpha)
+                .setUv(u, v)
+                .setUv1((int) (vis * 1000), (int) (variation * 1000))
+                .setUv2(0, 0)
+                .setNormal((float) n.x(), (float) n.y(), (float) n.z());
+    }
+
+    private static void drawGlass(ClientSkyEvent sky, V3 base, Camera camera, float partial, double t, double glow,
+                                  double pulse, double stop, int sceneTex) {
         var shards = sky.scene.fracture.shards;
         int count = shards.size();
         if (order.length < count) {
@@ -178,72 +248,109 @@ final class SkyRenderer {
         Arrays.sort(order, 0, count, (a, b) -> Double.compare(depth[b], depth[a]));
 
         ShaderInstance shader = ModShaders.glass;
-        shader.safeGetUniform("GlassParams").set((float) glow, 0.035f, (float) pulse, (float) stop);
+        prepareSky(sky, camera, partial, shader);
+        shader.safeGetUniform("GlassParams").set((float) glow, 0.03f, (float) pulse, (float) stop);
         RenderSystem.setShaderTexture(0, sceneTex);
+        RenderSystem.setShaderTexture(1, CLOUDS);
         RenderSystem.setShader(() -> shader);
         RenderSystem.blendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA,
                 GlStateManager.SourceFactor.ONE, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
-        BufferBuilder buf = Tesselator.getInstance().begin(VertexFormat.Mode.TRIANGLES, DefaultVertexFormat.POSITION_TEX_COLOR_NORMAL);
+        BufferBuilder buf = Tesselator.getInstance().begin(VertexFormat.Mode.TRIANGLES, DefaultVertexFormat.NEW_ENTITY);
+        double restoreAt = sky.restoreAt();
         for (int o = 0; o < count; o++) {
             int i = order[o];
             ShardData s = shards.get(i);
             SkyScene.ShardPose pose = sky.poses[i];
             double free = pose.free;
-            double alpha = pose.alpha * Math.max(glow, free) * (0.62 + 0.25 * free);
+            // Sealed glass is almost invisible against the sky it shows; free shards are solid sky.
+            double alpha = pose.alpha * Math.max(glow * 0.6 * rimFade(s.centroid2), free * 0.97);
             if (alpha <= 0.003) {
                 continue;
             }
-            double edgeGlow = Math.min(1.0, free * 0.9 + pose.flash * 1.5);
-            emitShard(buf, s, pose, base, (float) alpha, (float) edgeGlow);
+            double edgeGlow = Math.min(1.0, free * 0.85 + pose.flash * 1.5);
+            // Clouds on a free shard stop where they were at the moment it broke away.
+            double broke = SkyTimeline.FALL + s.detachDelay * 20;
+            double frozen = free > 0 && t > broke ? VIEW.ticks - (t - broke) : 0;
+            emitShard(buf, s, pose, base, (float) alpha, (float) edgeGlow, frozen);
         }
+        drawDebris(sky, base, t, restoreAt, buf);
         draw(buf);
     }
 
-    private static void emitShard(BufferBuilder buf, ShardData s, SkyScene.ShardPose pose, V3 base, float alpha, float edgeGlow) {
+    private static void emitShard(BufferBuilder buf, ShardData s, SkyScene.ShardPose pose, V3 base, float alpha,
+                                  float edgeGlow, double frozen) {
         Quat q = pose.rotation;
         V3 center = base.add(s.origin).add(pose.offset);
-        double h = DomeShape.THICKNESS * 0.5;
+        double h = s.thickness * 0.5;
         V3 nOut = q.rotate(s.normal);
+        V3 nIn = nOut.mul(-1);
+        V3 cOutRest = s.origin.add(s.normal.mul(h));
+        V3 cInRest = s.origin.add(s.normal.mul(-h));
         V3 cOut = center.add(q.rotate(s.normal.mul(h)));
         V3 cIn = center.add(q.rotate(s.normal.mul(-h)));
-        // Subtle per-shard tint so neighbouring panes catch the light differently.
-        float tr = (float) (0.80 + 0.12 * s.tint);
-        float tg = (float) (0.90 + 0.06 * s.tint);
-        float tb = 1.0f;
+        float var = (float) s.tint;
         int n = s.outline.length;
-        V3[] out = new V3[n];
-        V3[] in = new V3[n];
+        V3[] out = new V3[n], in = new V3[n], outRest = new V3[n], inRest = new V3[n];
         for (int k = 0; k < n; k++) {
             out[k] = center.add(q.rotate(s.outer[k]));
             in[k] = center.add(q.rotate(s.inner[k]));
+            outRest[k] = s.origin.add(s.outer[k]);
+            inRest[k] = s.origin.add(s.inner[k]);
         }
-        V3 nIn = nOut.mul(-1);
         for (int k = 0; k < n; k++) {
             int k2 = (k + 1) % n;
-            glassVertex(buf, cOut, nOut, 0f, edgeGlow, tr, tg, tb, alpha);
-            glassVertex(buf, out[k], nOut, 1f, edgeGlow, tr, tg, tb, alpha);
-            glassVertex(buf, out[k2], nOut, 1f, edgeGlow, tr, tg, tb, alpha);
+            glassVertex(buf, cOut, nOut, cOutRest, 0f, edgeGlow, alpha, frozen, var);
+            glassVertex(buf, out[k], nOut, outRest[k], 1f, edgeGlow, alpha, frozen, var);
+            glassVertex(buf, out[k2], nOut, outRest[k2], 1f, edgeGlow, alpha, frozen, var);
 
-            glassVertex(buf, cIn, nIn, 0f, edgeGlow, tr, tg, tb, alpha);
-            glassVertex(buf, in[k2], nIn, 1f, edgeGlow, tr, tg, tb, alpha);
-            glassVertex(buf, in[k], nIn, 1f, edgeGlow, tr, tg, tb, alpha);
+            glassVertex(buf, cIn, nIn, cInRest, 0f, edgeGlow, alpha, frozen, var);
+            glassVertex(buf, in[k2], nIn, inRest[k2], 1f, edgeGlow, alpha, frozen, var);
+            glassVertex(buf, in[k], nIn, inRest[k], 1f, edgeGlow, alpha, frozen, var);
 
-            // Side wall: the visible thickness of the pane, always fully lit at the rim.
+            if (out[k2].sub(out[k]).length() < 1e-4) {
+                continue; // collinear vertex from a neighbour's cut: no wall needed
+            }
+            // Side wall: the broken cut face of the pane.
             V3 side = out[k2].sub(out[k]).cross(in[k].sub(out[k])).normalize();
-            glassVertex(buf, out[k], side, 1f, edgeGlow, tr, tg, tb, alpha);
-            glassVertex(buf, out[k2], side, 1f, edgeGlow, tr, tg, tb, alpha);
-            glassVertex(buf, in[k2], side, 1f, edgeGlow, tr, tg, tb, alpha);
-            glassVertex(buf, out[k], side, 1f, edgeGlow, tr, tg, tb, alpha);
-            glassVertex(buf, in[k2], side, 1f, edgeGlow, tr, tg, tb, alpha);
-            glassVertex(buf, in[k], side, 1f, edgeGlow, tr, tg, tb, alpha);
+            glassVertex(buf, out[k], side, outRest[k], 1f, edgeGlow, alpha, frozen, var);
+            glassVertex(buf, out[k2], side, outRest[k2], 1f, edgeGlow, alpha, frozen, var);
+            glassVertex(buf, in[k2], side, inRest[k2], 1f, edgeGlow, alpha, frozen, var);
+            glassVertex(buf, out[k], side, outRest[k], 1f, edgeGlow, alpha, frozen, var);
+            glassVertex(buf, in[k2], side, inRest[k2], 1f, edgeGlow, alpha, frozen, var);
+            glassVertex(buf, in[k], side, inRest[k], 1f, edgeGlow, alpha, frozen, var);
         }
     }
 
-    private static void glassVertex(BufferBuilder buf, V3 p, V3 n, float edge, float edgeGlow,
-                                    float r, float g, float b, float a) {
-        buf.addVertex((float) p.x(), (float) p.y(), (float) p.z()).setUv(edge, edgeGlow)
-                .setColor(r, g, b, a).setNormal((float) n.x(), (float) n.y(), (float) n.z());
+    /** Tiny splinters: double-sided sharp triangles that glint as they tumble. */
+    private static void drawDebris(ClientSkyEvent sky, V3 base, double t, double restoreAt, BufferBuilder buf) {
+        var debris = sky.scene.fracture.debris;
+        SkyScene.ShardPose pose = DEBRIS_POSE;
+        for (int i = 0; i < debris.size(); i++) {
+            DebrisData d = debris.get(i);
+            sky.scene.debrisPose(d, t, restoreAt, pose);
+            if (pose.alpha <= 0.01) {
+                continue;
+            }
+            Quat q = pose.rotation;
+            V3 c = base.add(d.origin).add(pose.offset);
+            V3 nrm = q.rotate(d.normal);
+            double frozen = VIEW.ticks - (t - (SkyTimeline.FALL + d.detachDelay * 20));
+            float a = (float) (pose.alpha * 0.95);
+            V3 p0 = c.add(q.rotate(d.tri[0])), p1 = c.add(q.rotate(d.tri[1])), p2 = c.add(q.rotate(d.tri[2]));
+            V3 r0 = d.origin.add(d.tri[0]), r1 = d.origin.add(d.tri[1]), r2 = d.origin.add(d.tri[2]);
+            glassVertex(buf, p0, nrm, r0, 1f, 0.9f, a, frozen, 0.5f);
+            glassVertex(buf, p1, nrm, r1, 0.6f, 0.9f, a, frozen, 0.5f);
+            glassVertex(buf, p2, nrm, r2, 0.6f, 0.9f, a, frozen, 0.5f);
+        }
     }
+
+    private static final SkyScene.ShardPose DEBRIS_POSE = new SkyScene.ShardPose();
+
+    /** The sealed shell dissolves towards its rim, so the dome melts into the real horizon. */
+    private static double rimFade(V2 disc) {
+        return 1.0 - SkyScene.smoothstep(0.72, 0.98, disc.length());
+    }
+    private static final ResourceLocation CLOUDS = ResourceLocation.withDefaultNamespace("textures/environment/clouds.png");
 
     // ------------------------------------------------------------------ cracks
 
@@ -269,7 +376,10 @@ final class SkyRenderer {
             if (pose != null && pose.alpha <= 0.01) {
                 continue;
             }
-            float intensity = c.hairline() ? 0.55f : 1.0f;
+            float intensity = (float) ((c.hairline() ? 0.55 : 1.0) * (pose != null && pose.free > 0 ? 1.0 : rimFade(c.a().lerp(c.b(), 0.5))));
+            if (intensity <= 0.01f) {
+                continue;
+            }
             for (int k = 0; k + 1 < range.length; k += 2) {
                 if (range[k + 1] - range[k] > 1e-4) {
                     emitCrack(buf, c, range[k], range[k + 1], owner, pose, base, intensity);

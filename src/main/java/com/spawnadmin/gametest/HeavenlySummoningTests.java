@@ -27,7 +27,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 @GameTestHolder(SpawnAdmin.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class HeavenlySummoningTests {
-    private static final int HIDDEN = 20 * 10;
+    private static final int HIDDEN = 20 * 15;
 
     private HeavenlySummoningTests() {
     }

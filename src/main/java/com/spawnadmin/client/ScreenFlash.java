@@ -2,6 +2,7 @@ package com.spawnadmin.client;
 
 import net.minecraft.client.gui.GuiGraphics;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
+import net.neoforged.neoforge.client.event.ScreenEvent;
 
 /**
  * White-out used when the hand carries the local player beyond the sky. Driven by wall-clock
@@ -28,6 +29,15 @@ final class ScreenFlash {
     }
 
     static void render(RenderGuiEvent.Post event) {
+        draw(event.getGuiGraphics(), true);
+    }
+
+    /** Also over screens: the dimension loading screen must stay hidden inside the white-out. */
+    static void renderScreen(ScreenEvent.Render.Post event) {
+        draw(event.getGuiGraphics(), false);
+    }
+
+    private static void draw(GuiGraphics g, boolean consumeLevel) {
         long now = System.currentTimeMillis();
         float a = level;
         if (now < holdUntil) {
@@ -35,11 +45,12 @@ final class ScreenFlash {
         } else if (now < fadeEnd) {
             a = Math.max(a, (fadeEnd - now) / (float) (fadeEnd - holdUntil));
         }
-        level = 0f;
+        if (consumeLevel) {
+            level = 0f;
+        }
         if (a <= 0.003f) {
             return;
         }
-        GuiGraphics g = event.getGuiGraphics();
         int alpha = Math.min(255, (int) (a * 255));
         g.fill(0, 0, g.guiWidth(), g.guiHeight(), (alpha << 24) | 0xF4F8FF);
     }
