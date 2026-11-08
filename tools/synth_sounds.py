@@ -73,13 +73,17 @@ def fade_tail(x, seconds=0.05):
 
 
 def ping(t, freq, start, decay, amp):
-    """Glassy sine ping with an exponential decay and a slight inharmonic overtone."""
+    """A glass fragment hitting glass: a very short noisy click with a brief inharmonic body.
+    Deliberately short and dull, so it reads as breaking glass rather than a bell."""
     tt = t - start
     on = tt >= 0
     out = np.zeros_like(t)
     tt = tt[on]
-    e = np.exp(-tt / decay)
-    out[on] = amp * e * (np.sin(2 * np.pi * freq * tt) + 0.35 * np.sin(2 * np.pi * freq * 2.76 * tt) * np.exp(-tt / (decay * 0.4)))
+    d = min(decay, 0.03) * 0.5
+    body = (np.sin(2 * np.pi * freq * tt) + 0.6 * np.sin(2 * np.pi * freq * 1.73 * tt)
+            + 0.4 * np.sin(2 * np.pi * freq * 2.91 * tt)) * np.exp(-tt / d)
+    click = rng.standard_normal(len(tt)) * np.exp(-tt / 0.002)
+    out[on] = amp * (body * 0.6 + click * 0.8)
     return out
 
 
@@ -154,7 +158,7 @@ def shatter():
 
 
 def time_stop():
-    """Reverse swell into a sudden halt, followed by a frozen high ringing."""
+    """Reverse swell into a sudden halt, followed by a low frozen hum."""
     dur = 3.2
     t = t_axis(dur)
     swell_len = 0.9
@@ -166,10 +170,10 @@ def time_stop():
     after = t >= swell_len
     ta = t[after] - swell_len
     thump[after] = np.sin(2 * np.pi * 55 * ta) * np.exp(-ta / 0.25) * 1.5
-    ring = np.zeros_like(t)
-    for f, a in [(1567.98, 0.3), (2349.3, 0.18), (3135.9, 0.1)]:
-        ring[after] += a * np.sin(2 * np.pi * f * ta) * np.exp(-ta / 1.6)
-    x = swell + thump + ring
+    # A low frozen hum instead of a ringing tone.
+    hum = np.zeros_like(t)
+    hum[after] = (np.sin(2 * np.pi * 82.4 * ta) * 0.35 + np.sin(2 * np.pi * 123.5 * ta) * 0.15) * np.exp(-ta / 1.4)
+    x = swell + thump + hum
     return normalize(reverb(x, 2.5, 0.35))
 
 
@@ -190,7 +194,7 @@ def hand_appear():
 
 
 def grab_teleport():
-    """Rising whoosh into a bright chime and a white-out."""
+    """Rising whoosh into a low swell and a white-out (no chime)."""
     dur = 3.0
     t = t_axis(dur)
     whoosh = rng.standard_normal(len(t))
@@ -202,10 +206,11 @@ def grab_teleport():
         acc += alpha * (whoosh[i] - acc)
         out[i] = acc
     out *= (t / dur) ** 1.5 * 1.2
-    chime = np.zeros_like(t)
-    for f in (1046.5, 1318.5, 1568.0, 2093.0):
-        chime += ping(t, f, 2.2, 0.8, 0.35)
-    x = out + chime
+    # A low, dark swell instead of a chime.
+    swell = np.zeros_like(t)
+    for f in (73.4, 110.0, 146.8):
+        swell += np.sin(2 * np.pi * f * t) * np.clip((t - 1.4) / 1.2, 0, 1) ** 2 * np.exp(-np.clip(t - 2.6, 0, None) / 0.8)
+    x = out + swell * 0.5
     return normalize(reverb(x, 3.0, 0.4))
 
 
@@ -219,7 +224,7 @@ def restore():
         x += ping(t, rng.uniform(1500, 7000), s, rng.uniform(0.05, 0.3), rng.uniform(0.04, 0.16))
     rev = x[::-1].copy()
     pad = np.zeros_like(t)
-    for f in (261.63, 329.63, 392.0, 523.25):
+    for f in (130.81, 164.81, 196.0, 261.63):
         pad += np.sin(2 * np.pi * f * t) * 0.25
     pad *= env_adsr(len(t), 3.5, 0.5, 0.8, 2.2)
     x = rev * env_adsr(len(t), 0.5, 0.2, 1.0, 1.0) + pad

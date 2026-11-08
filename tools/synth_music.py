@@ -4,9 +4,9 @@ Usage: python3 tools/synth_music.py <output_dir>
 Requires numpy + scipy and ffmpeg (libvorbis).
 
 * clock_tick / clock_tock  – the hidden wait: a clock counting down the seconds
-* hour_strike              – the hour has come: three strokes of a deep clock bell
-* clock_halt               – time stops: the last tick, a tone that hangs and is cut off
-* theme_summoning          – minimal score, 28 s, aligned to the event timeline
+* hour_strike              – the hour has come: three deep, dark strokes of a tower clock
+* clock_halt               – time stops: the last tick and a wooden thud, then silence
+* theme_summoning          – score, 33 s, aligned to the event timeline (no bells or chimes)
 * music_admin_realm        – quiet ambient piano for the administrator's realm (~85 s)
 
 Timeline of the theme (seconds after the sky starts to glow, matches SkyTimeline):
@@ -101,15 +101,51 @@ def normalize(x, peak):
 
 # ------------------------------------------------------------------ instruments
 
-def celesta(f, dur=2.5, amp=1.0):
-    """Struck glass/celesta: bright attack, inharmonic shimmer, long pure decay."""
+def strings(freqs, dur, amp=1.0, attack=0.6, release=1.0, bright=2600, vibrato=0.0025, voices=4):
+    """Bowed string section: detuned band-limited saws, delayed vibrato, bow noise, body resonances."""
     t = np.arange(secs(dur)) / SR
-    x = np.sin(2 * np.pi * f * t) * np.exp(-t / 1.1)
-    x += 0.35 * np.sin(2 * np.pi * f * 2.0 * 1.0015 * t) * np.exp(-t / 0.5)
-    x += 0.25 * np.sin(2 * np.pi * f * 4.07 * t) * np.exp(-t / 0.12)
-    x += 0.08 * np.sin(2 * np.pi * f * 6.9 * t) * np.exp(-t / 0.05)
-    x *= env(len(t), 0.002, 0.05)
-    return x * amp
+    out = np.zeros((len(t), 2))
+    for f in freqs:
+        for v in range(voices):
+            ch = v % 2
+            det = 1 + (v - (voices - 1) / 2) * 0.0018
+            onset = np.clip((t - 0.25) / 0.6, 0, 1)
+            vib = 1 + vibrato * onset * np.sin(2 * np.pi * (5.2 + 0.3 * v) * t + v * 1.7)
+            phase = 2 * np.pi * np.cumsum(f * det * vib) / SR + RNG.uniform(0, 2 * np.pi)
+            saw = np.zeros_like(t)
+            for k in range(1, 24):
+                if f * k > 9000:
+                    break
+                saw += np.sin(k * phase) / k
+            out[:, ch] += saw
+        bow = lp(hp(RNG.standard_normal(len(t)), f * 2), f * 8) * 0.04
+        out += bow[:, None]
+    # Body: a warm low-mid bump and a softened top, like wood rather than a synth.
+    b1, a1 = butter(2, [250 / (SR / 2), 1200 / (SR / 2)], "band")
+    out = lp(out, bright) + lfilter(b1, a1, out, axis=0) * 0.6
+    e = env(len(t), attack, release)
+    return out * e[:, None] * amp / max(1, len(freqs) * voices)
+
+
+def spiccato(f, amp=1.0):
+    """Short bouncing bow stroke."""
+    x = strings([f], 0.22, amp, 0.008, 0.12, bright=3200, vibrato=0.0, voices=2)
+    return x.mean(axis=1)
+
+
+def pizz(f, dur=1.2, amp=1.0):
+    """Plucked string (Karplus-Strong): woody, round, decays fast. Not a bell."""
+    n = secs(dur)
+    period = max(2, int(round(SR / f)))
+    excite = np.zeros(n)
+    excite[:period] = lp(RNG.standard_normal(period), min(4000, f * 10))
+    a = np.zeros(period + 2)
+    a[0] = 1.0
+    a[period] = -0.497
+    a[period + 1] = -0.497
+    y = lfilter([1.0], a, excite)
+    y = lp(y, 2500)
+    return y * env(n, 0.002, 0.1) * amp / (np.max(np.abs(y)) + 1e-9)
 
 
 def piano(f, dur=4.0, amp=1.0, soft=0.012):
@@ -193,39 +229,38 @@ def tick(pitch=1.0):
 
 
 def hour_strike():
-    """The hour has come: three deep strokes, each answered by the room."""
+    """The hour has come: three deep, dark strokes of a tower clock (low and filtered, no tinkle)."""
     total = 8.5
     out = buf(total)
     for i, at in enumerate((0.0, 1.7, 3.4)):
-        add(out, bell(hz("G2") * 2, 5.0, 1.0 - i * 0.08), at, pan=(-0.15, 0.15, 0.0)[i])
+        add(out, lp(bell(hz("G2"), 5.0, 1.0 - i * 0.08), 1400), at, pan=(-0.15, 0.15, 0.0)[i])
     out = reverb(out, 3.5, 0.35, 4000, seed=3)
     return normalize(out[: secs(total)].mean(axis=1), 0.9)
 
 
 def clock_halt():
-    """A last loud tick, then a tone that hangs in the air without decaying and is cut off."""
-    total = 2.4
+    """The clock stops: a last heavy tick, a low wooden thud of the mechanism, then dead silence."""
+    total = 1.6
     x = np.zeros(secs(total))
-    tk = tick(0.8) * 1.0
+    tk = tick(0.7)
     x[: len(tk)] += tk
-    t = np.arange(secs(1.6)) / SR
-    hang = (np.sin(2 * np.pi * 1567.98 * t) * 0.25 + np.sin(2 * np.pi * 2349.3 * t) * 0.12) * env(len(t), 0.004, 0.0)
-    i = secs(0.02)
-    x[i:i + len(hang)] += hang
-    x[i + len(hang):] = 0.0  # abrupt cut: time has stopped
+    t = np.arange(secs(0.9)) / SR
+    thud = (np.sin(2 * np.pi * 110 * t) * 0.6 + np.sin(2 * np.pi * 165 * t) * 0.25) * np.exp(-t / 0.18)
+    i = secs(0.03)
+    x[i:i + len(thud)] += lp(thud, 800)
     return normalize(x, 0.85)
 
 
 # ------------------------------------------------------------------ theme (stereo, 33 s)
 
-def music_box(f, dur=1.6, amp=1.0, detune=0.0):
-    """Music-box tine: bright, quick decay; `detune` bends the pitch down while it rings (warped)."""
+def warped_piano(f, dur=1.8, amp=1.0, warp=0.0):
+    """Felt piano heard through a worn tape: the pitch sags and wobbles as `warp` grows."""
     t = np.arange(secs(dur)) / SR
-    bend = 1.0 - detune * (1 - np.exp(-t / 0.4))
-    phase = 2 * np.pi * np.cumsum(f * bend) / SR
-    x = np.sin(phase) * np.exp(-t / 0.55) + 0.3 * np.sin(3.01 * phase) * np.exp(-t / 0.18)
-    x += 0.12 * np.sin(5.4 * phase) * np.exp(-t / 0.06)
-    return x * env(len(t), 0.001, 0.05) * amp
+    wow = 1.0 - warp * (1 - np.exp(-t / 0.5)) + warp * 0.4 * np.sin(2 * np.pi * 0.9 * t)
+    x = np.zeros_like(t)
+    for k, (a, d) in enumerate([(1.0, 2.6), (0.4, 1.4), (0.15, 0.8), (0.06, 0.4)], start=1):
+        x += a * np.sin(2 * np.pi * np.cumsum(f * k * wow) / SR) * np.exp(-t / d)
+    return lp(x, 2400) * env(len(t), 0.012, 0.25) * amp
 
 
 def tape_stop(x, at, length):
@@ -265,51 +300,56 @@ def shepard(dur, start_rate=0.15, end_rate=1.2, amp=1.0):
 
 def theme():
     """33 s score, aligned to SkyTimeline: GLOW 0, CRACK 2, SHATTER 7.5, FALL 9, FREEZE 15,
-    HAND 16.5, GRAB 19.5, LIFT 20.5, TELEPORT 22.75, RESTORE 23.25 .. 32.25."""
+    HAND 16.5, GRAB 19.5, LIFT 20.5, TELEPORT 22.75, RESTORE 23.25 .. 32.25.
+    No bells, chimes, celesta or music box: piano, strings, plucks, choir, drums only."""
     total = 33.5
     pre = buf(total)
     post = buf(total)
     FREEZE = 15.0
 
-    # GLOW: an innocent music-box tune, as if nothing could go wrong.
-    tune = ["E5", "G5", "C6", "B5", "G5", "A5", "G5", "E5", "D5", "E5", "G5", "C6", "D6", "B5", "G5", "C6"]
+    # GLOW: an innocent piano tune over hushed strings, as if nothing could go wrong.
+    tune = ["E4", "G4", "C5", "B4", "G4", "A4", "G4", "E4", "D4", "E4", "G4", "C5", "D5", "B4", "G4", "C5"]
     beat = 0.36
     for i, n in enumerate(tune):
         at = 0.15 + i * beat
-        # From CRACK on the box goes out of tune, more and more.
-        warp = max(0.0, (at - 2.0) / 5.0) * 0.06
+        warp = max(0.0, (at - 2.0) / 5.0) * 0.05  # from CRACK on, the tape starts to sag
         if i == 9:
-            n = "F#5"  # the first wrong note
-        add(pre, music_box(hz(n), 1.6, 0.45, warp), at, -0.3 + 0.6 * (i % 2))
-    # A cello drone creeping up chromatically under the cracks.
+            n = "F#4"  # the first wrong note
+        add(pre, warped_piano(hz(n), 1.8, 0.5, warp), at, -0.2 + 0.4 * (i % 2))
+    s0 = strings([hz("C3"), hz("G3"), hz("E4")], 3.0, 0.35, 1.2, 1.0, bright=1800)
+    pre[:len(s0)] += s0
+
+    # CRACK: a cello line creeping up chromatically, plucked strings in an uneasy 5/8.
     for i, n in enumerate(["D2", "Eb2", "E2", "F2"]):
-        add(pre, sine(hz(n), 1.6, 0.35, 0.5, 0.6) + 0.5 * sine(hz(n) * 2, 1.6, 0.12, 0.5, 0.6), 2.0 + i * 1.35, -0.2)
-    # Irregular glass pings in 5/8, the cracks running.
+        c = strings([hz(n), hz(n) * 2], 1.6, 0.55, 0.25, 0.5, bright=1500)
+        i0 = secs(2.0 + i * 1.35)
+        pre[i0:i0 + len(c)] += c
     at = 2.2
     for i in range(14):
-        add(pre, celesta(hz(["A6", "G#6", "D7", "C#7"][i % 4]), 1.0, 0.22), at, float(RNG.uniform(-0.9, 0.9)))
+        add(pre, pizz(hz(["D3", "A3", "Eb3", "Bb3"][i % 4]), 1.0, 0.32), at, float(RNG.uniform(-0.8, 0.8)))
         at += [0.3, 0.3, 0.45, 0.3, 0.45][i % 5] * (1 - i * 0.02)
 
-    pre = reverb(pre, 3.0, 0.38, 6000, seed=11)[: secs(total)]
+    pre = reverb(pre, 3.0, 0.36, 5000, seed=11)[: secs(total)]
     # SHATTER: sudden silence...
     pre[secs(7.5):] = 0
-
-    # ...then a reversed chord sucking everything in.
+    # ...then a reversed piano chord sucking everything in.
     rev = buf(1.5)
     for n in ("D3", "A3", "Eb4", "G4", "D5"):
         add(rev, piano(hz(n), 1.5, 0.5), 0.0, 0.0)
-    rev = reverb(rev, 2.0, 0.5, 5000, seed=12)[: secs(1.5)][::-1]
+    rev = reverb(rev, 2.0, 0.5, 4500, seed=12)[: secs(1.5)][::-1]
     pre[secs(8.1):secs(8.1) + len(rev)] += rev * 1.4
 
-    # FALL: the hit. A dissonant cluster, a sub boom, glass falling down a whole-tone scale over a 7/8 drum.
+    # FALL: the hit. A dissonant string cluster, a sub boom, rushing string runs falling down a
+    # whole-tone scale over a 7/8 drum.
     hit = buf(6.5)
-    hit += pad([hz("D1"), hz("D2"), hz("A2"), hz("D3"), hz("Eb3"), hz("F3"), hz("A3"), hz("Eb4")], 6.5, 1.6, 0.01, 2.5, cutoff=2600)
+    hit += strings([hz("D2"), hz("A2"), hz("D3"), hz("Eb3"), hz("F3"), hz("A3"), hz("Eb4")], 6.5, 1.5, 0.02, 2.5, bright=2800)
     add(hit, sine(hz("D1"), 2.5, 1.2, 0.002, 2.0), 0.0)
     whole = ["C", "D", "E", "F#", "G#", "A#"]
-    at, step, octv = 0.05, 0.11, 7
-    for i in range(46):
-        n = whole[(len(whole) - 1 - i) % len(whole)] + str(max(4, octv - i // 6))
-        add(hit, celesta(hz(n), 1.6, 0.28), at, float(np.sin(i * 1.7)) * 0.85)
+    at, step = 0.05, 0.12
+    for i in range(44):
+        octv = max(3, 5 - i // 7)
+        n = whole[(len(whole) - 1 - i) % len(whole)] + str(octv)
+        add(hit, spiccato(hz(n), 0.6), at, float(np.sin(i * 1.7)) * 0.7)
         at += step * (1 + 0.5 * np.sin(i * 0.9))
         if at > 5.8:
             break
@@ -317,45 +357,51 @@ def theme():
     for bar_i in range(3):
         for k, off in enumerate(pattern):
             add(hit, drum(72.0 if k in (0, 3) else 98.0, 0.9, 0.75 if k in (0, 3) else 0.35), 0.3 + bar_i * 2.0 + off, 0.0)
-    hit = reverb(hit, 3.5, 0.35, 5000, seed=13)[: secs(6.5)]
+    hit = reverb(hit, 3.5, 0.35, 4500, seed=13)[: secs(6.5)]
     i0 = secs(9.0)
     pre[i0:i0 + len(hit)] += hit
 
     # FREEZE: the whole score winds down like a tape losing power.
     pre = tape_stop(pre, FREEZE - 0.15, 0.75)
 
-    # A single suspended tone hangs in the stopped air.
-    add(post, sine(hz("B5"), 1.6, 0.1, 0.3, 0.4) + sine(hz("F6"), 1.6, 0.05, 0.3, 0.4), FREEZE + 0.5)
+    # One low string note hangs in the stopped air.
+    c = strings([hz("E2")], 1.6, 0.35, 0.3, 0.5, bright=900, vibrato=0.0)
+    post[secs(FREEZE + 0.4):secs(FREEZE + 0.4) + len(c)] += c
 
-    # HAND: the choir enters in a far, warm key (D minor -> Db major).
+    # HAND: the choir enters in a far, warm key (D minor -> Db major), strings beneath.
     c = choir([hz("Db3"), hz("F3"), hz("Ab3"), hz("Db4")], 3.2, 1.5, 1.6, 0.3)
     post[secs(16.5):secs(16.5) + len(c)] += c
-    add(post, sine(hz("Db1"), 3.2, 0.45, 1.6, 0.3), 16.5)
+    c = strings([hz("Db2"), hz("Ab2"), hz("F3")], 3.2, 0.6, 1.6, 0.3, bright=1600)
+    post[secs(16.5):secs(16.5) + len(c)] += c
     # GRAB: an abrupt lift by a semitone, to D major.
     c = choir([hz("D3"), hz("F#3"), hz("A3"), hz("D4"), hz("F#4")], 1.2, 1.7, 0.03, 0.4)
     post[secs(19.5):secs(19.5) + len(c)] += c
     # LIFT: an endless rise.
-    sh = shepard(2.25, 0.4, 2.0, 0.22)
+    sh = shepard(2.25, 0.4, 2.0, 0.2)
     add(post, sh, 20.5, -0.2)
     add(post, sh * 0.8, 20.52, 0.2)
 
-    # TELEPORT: a breath of silence, then the bells.
+    # TELEPORT: a breath of silence, then the whole ensemble blooms (no bells).
     post[secs(22.75):secs(23.0)] *= np.linspace(1, 0, secs(0.25))[:, None]
-    for n in ("D4", "A4", "D5", "F#5"):
-        add(post, bell(hz(n), 4.0, 0.22), 23.0, 0.0)
+    c = strings([hz("D2"), hz("A2"), hz("D3"), hz("F#3"), hz("A3"), hz("D4")], 3.5, 1.4, 0.15, 2.5, bright=3000)
+    post[secs(23.0):secs(23.0) + len(c)] += c
+    c = choir([hz("D3"), hz("A3"), hz("F#4")], 3.0, 1.1, 0.2, 2.0)
+    post[secs(23.0):secs(23.0) + len(c)] += c
+    for k in range(10):  # a soft timpani roll into the chord
+        add(post, drum(62.0, 0.6, 0.15 + 0.05 * k), 22.4 + k * 0.06, 0.0)
 
-    # RESTORE: the music box again, first backwards, then forwards in a new key.
+    # RESTORE: the piano tune again, first backwards, then forwards in a new key.
     box = buf(4.5)
     for i, n in enumerate(tune[:12]):
-        add(box, music_box(hz(n), 1.6, 0.42), i * 0.32, -0.3 + 0.6 * (i % 2))
-    box = reverb(box, 2.5, 0.4, 6000, seed=14)[: secs(4.5)]
+        add(box, piano(hz(n), 1.8, 0.45), i * 0.32, -0.2 + 0.4 * (i % 2))
+    box = reverb(box, 2.5, 0.4, 4500, seed=14)[: secs(4.5)]
     post[secs(23.6):secs(23.6) + len(box)] += box[::-1] * 0.9
-    for i, n in enumerate(["F#5", "A#5", "C#6", "F#6", "E#6", "C#6", "A#5", "F#6"]):
-        add(post, music_box(hz(n.replace("E#", "F")), 1.8, 0.38), 28.2 + i * 0.42, -0.3 + 0.6 * (i % 2))
-    p = pad([hz("F#2"), hz("C#3"), hz("A#3"), hz("F#4")], 5.0, 0.5, 1.5, 3.0, cutoff=1300)
-    post[secs(28.0):secs(28.0) + len(p)] += p
+    for i, n in enumerate(["F#4", "A#4", "C#5", "F#5", "F5", "C#5", "A#4", "F#4"]):
+        add(post, piano(hz(n), 2.2, 0.42), 28.2 + i * 0.42, -0.2 + 0.4 * (i % 2))
+    c = strings([hz("F#2"), hz("C#3"), hz("A#3"), hz("F#4")], 5.0, 0.5, 1.5, 3.0, bright=1500)
+    post[secs(28.0):secs(28.0) + len(c)] += c
 
-    post = reverb(post, 4.0, 0.42, 5000, seed=15)[: secs(total)]
+    post = reverb(post, 4.0, 0.42, 4500, seed=15)[: secs(total)]
     out = pre + post
     out *= env(len(out), 0.01, 1.5)[:, None]
     return normalize(out, 0.8)
@@ -391,17 +437,15 @@ def realm_music():
         k = int(rng.integers(0, 3)) if b >= 2 else 1
         for _ in range(k):
             pos = beat * float(rng.choice([1.5, 2.0, 2.5, 3.0, 3.5]))
-            n = mel[int(rng.integers(0, len(mel)))] + ("5" if rng.random() < 0.7 else "6")
+            n = mel[int(rng.integers(0, len(mel)))] + ("4" if rng.random() < 0.6 else "5")
             add(out, piano(hz(n), 4.0, 0.36, soft=0.015), t0 + pos, 0.3)
-            if b >= len(chords) * 2:  # second cycle: a faint celesta shadow an octave up
-                add(out, celesta(hz(n) * 2, 2.2, 0.06), t0 + pos + 0.02, 0.5)
         # A breath of strings under every chord change.
         if not second:
-            p = pad([hz(n) for n in notes[1:4]], bar * 2 + 1.5, 0.18, 2.5, 2.5, cutoff=900)
+            p = strings([hz(n) for n in notes[1:4]], bar * 2 + 1.5, 0.22, 2.5, 2.5, bright=1100, vibrato=0.0015)
             i = secs(t0)
             out[i:i + len(p)] += p[: len(out) - i]
-    # A final unresolved high note.
-    add(out, piano(hz("A5"), 6.0, 0.3), bars * bar + 0.2, 0.2)
+    # A final unresolved note.
+    add(out, piano(hz("A4"), 6.0, 0.3), bars * bar + 0.2, 0.2)
     air = lp(hp(RNG.standard_normal((len(out), 2)), 2000), 7000) * 0.004
     out = reverb(out + air, 5.0, 0.5, 4200, seed=7)[: len(out)]
     out *= env(len(out), 1.5, 5.0)[:, None]
