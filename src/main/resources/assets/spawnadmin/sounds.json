@@ -1,0 +1,74 @@
+{
+  "heaven_horn": {
+    "subtitle": "subtitles.spawnadmin.heaven_horn",
+    "sounds": [
+      {
+        "name": "spawnadmin:heaven_horn",
+        "attenuation_distance": 64
+      }
+    ]
+  },
+  "sky_glow": {
+    "subtitle": "subtitles.spawnadmin.sky_glow",
+    "sounds": [
+      {
+        "name": "spawnadmin:sky_glow",
+        "attenuation_distance": 256
+      }
+    ]
+  },
+  "sky_crack": {
+    "subtitle": "subtitles.spawnadmin.sky_crack",
+    "sounds": [
+      {
+        "name": "spawnadmin:sky_crack",
+        "attenuation_distance": 256
+      }
+    ]
+  },
+  "sky_shatter": {
+    "subtitle": "subtitles.spawnadmin.sky_shatter",
+    "sounds": [
+      {
+        "name": "spawnadmin:sky_shatter",
+        "attenuation_distance": 256
+      }
+    ]
+  },
+  "time_stop": {
+    "subtitle": "subtitles.spawnadmin.time_stop",
+    "sounds": [
+      {
+        "name": "spawnadmin:time_stop",
+        "attenuation_distance": 256
+      }
+    ]
+  },
+  "hand_appear": {
+    "subtitle": "subtitles.spawnadmin.hand_appear",
+    "sounds": [
+      {
+        "name": "spawnadmin:hand_appear",
+        "attenuation_distance": 256
+      }
+    ]
+  },
+  "grab_teleport": {
+    "subtitle": "subtitles.spawnadmin.grab_teleport",
+    "sounds": [
+      {
+        "name": "spawnadmin:grab_teleport",
+        "attenuation_distance": 64
+      }
+    ]
+  },
+  "sky_restore": {
+    "subtitle": "subtitles.spawnadmin.sky_restore",
+    "sounds": [
+      {
+        "name": "spawnadmin:sky_restore",
+        "attenuation_distance": 256
+      }
+    ]
+  }
+}

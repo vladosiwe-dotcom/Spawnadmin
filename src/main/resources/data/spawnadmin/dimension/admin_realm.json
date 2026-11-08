@@ -1,0 +1,13 @@
+{
+  "type": "spawnadmin:admin_realm",
+  "generator": {
+    "type": "minecraft:flat",
+    "settings": {
+      "biome": "minecraft:the_void",
+      "layers": [{"block": "minecraft:air", "height": 1}],
+      "lakes": false,
+      "features": false,
+      "structure_overrides": []
+    }
+  }
+}
