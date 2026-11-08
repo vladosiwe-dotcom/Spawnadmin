@@ -55,6 +55,16 @@ repositories {
 }
 
 dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test', Test) {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'failed'
+        exceptionFormat 'full'
+    }
 }
 
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
