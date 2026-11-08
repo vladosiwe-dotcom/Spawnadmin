@@ -23,7 +23,8 @@ import java.util.List;
 
 /**
  * Horn of the Heavens. Outside the realm it calls the heavens (after a silent wait the sky
- * shatters and a hand of light carries the player away). Inside the realm it sends the player back.
+ * shatters and a hand of light carries the player away). Sneak-use enters the realm directly.
+ * Inside the realm it sends the player back.
  */
 public class HeavenHornItem extends Item {
     private static final int USE_TICKS = 60;
@@ -45,6 +46,15 @@ public class HeavenHornItem extends Item {
             AdminRealm.leave(sp);
             sp.getCooldowns().addCooldown(this, RETURN_COOLDOWN);
             level.playSound(null, sp.getX(), sp.getY(), sp.getZ(), ModSounds.GRAB_TELEPORT.get(), SoundSource.PLAYERS, 1.0f, 1.2f);
+            return InteractionResultHolder.success(stack);
+        }
+        if (sp.isShiftKeyDown()) {
+            // Quiet passage: straight into the realm, without the spectacle.
+            if (SkyEventManager.isBusy(sp) || !AdminRealm.enter(sp)) {
+                return InteractionResultHolder.fail(stack);
+            }
+            sp.getCooldowns().addCooldown(this, RETURN_COOLDOWN);
+            level.playSound(null, sp.getX(), sp.getY(), sp.getZ(), ModSounds.GRAB_TELEPORT.get(), SoundSource.PLAYERS, 1.0f, 0.9f);
             return InteractionResultHolder.success(stack);
         }
         if (SkyEventManager.isBusy(sp)) {
@@ -73,5 +83,6 @@ public class HeavenHornItem extends Item {
     public void appendHoverText(ItemStack stack, TooltipContext context, List<Component> tooltip, TooltipFlag flag) {
         tooltip.add(Component.translatable("item.spawnadmin.heaven_horn.desc1").withStyle(ChatFormatting.GRAY, ChatFormatting.ITALIC));
         tooltip.add(Component.translatable("item.spawnadmin.heaven_horn.desc2").withStyle(ChatFormatting.AQUA));
+        tooltip.add(Component.translatable("item.spawnadmin.heaven_horn.desc3").withStyle(ChatFormatting.DARK_AQUA));
     }
 }

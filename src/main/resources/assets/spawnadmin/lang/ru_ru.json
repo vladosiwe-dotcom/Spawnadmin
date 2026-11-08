@@ -22,5 +22,6 @@
   "subtitles.spawnadmin.hand_appear": "Спускается рука света",
   "subtitles.spawnadmin.grab_teleport": "Унесён за небо",
   "subtitles.spawnadmin.sky_restore": "Небо восстанавливается",
-  "commands.spawnadmin.cancel.failed": "Нечего отменять"
+  "commands.spawnadmin.cancel.failed": "Нечего отменять",
+  "item.spawnadmin.heaven_horn.desc3": "Shift + ПКМ: сразу в измерение, без призыва."
 }

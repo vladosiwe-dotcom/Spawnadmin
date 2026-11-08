@@ -22,5 +22,6 @@
   "subtitles.spawnadmin.hand_appear": "A hand of light descends",
   "subtitles.spawnadmin.grab_teleport": "Carried beyond the sky",
   "subtitles.spawnadmin.sky_restore": "The sky mends",
-  "commands.spawnadmin.cancel.failed": "No summoning to cancel"
+  "commands.spawnadmin.cancel.failed": "No summoning to cancel",
+  "item.spawnadmin.heaven_horn.desc3": "Sneak + use: enter the realm directly."
 }
