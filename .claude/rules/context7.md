@@ -14,3 +14,7 @@ You MUST call `library` first to get a valid ID unless the user provides one dir
 For version-specific docs, use `/org/project/version` from the `library` output (e.g., `/vercel/next.js/v16.2.9`).
 
 If a command fails with a quota error, inform the user and suggest `npx ctx7@latest login` or setting `CONTEXT7_API_KEY` env var for higher limits. Do not silently fall back to training data.
+
+In Claude Code cloud sessions, Node does not use the HTTPS proxy by default. Prefix ctx7 commands with:
+`NODE_USE_ENV_PROXY=1 NODE_EXTRA_CA_CERTS=/root/.ccr/ca-bundle.crt npx ctx7@latest ...`
+The Context7 API key is injected by the environment's network proxy; do not set CONTEXT7_API_KEY.
