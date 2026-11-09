@@ -1,6 +1,6 @@
 {
   "item.spawnadmin.heaven_horn": "Horn of the Heavens",
-  "item.spawnadmin.heaven_horn.desc1": "Blow it, and the sky will listen.",
+  "item.spawnadmin.heaven_horn.desc1": "Point it at a player and blow. The sky will come for them.",
   "item.spawnadmin.heaven_horn.desc2": "Inside the Administrator's Realm: returns you home.",
   "message.spawnadmin.already_heard": "The heavens have already heard you...",
   "message.spawnadmin.already_in_realm": "You are already beyond the sky.",
@@ -13,7 +13,6 @@
   "commands.spawnadmin.cancel": "Cancelled %s sky event(s)",
   "dimension.spawnadmin.admin_realm": "Administrator's Realm",
   "subtitles.spawnadmin.heaven_horn": "Horn of the Heavens sounds",
-  "subtitles.spawnadmin.sky_glow": "The sky glows",
   "subtitles.spawnadmin.sky_crack": "The sky cracks",
   "subtitles.spawnadmin.sky_shatter": "The sky shatters",
   "subtitles.spawnadmin.time_stop": "Time stops",
@@ -25,5 +24,11 @@
   "subtitles.spawnadmin.hour_strike": "The hour strikes",
   "subtitles.spawnadmin.clock_halt": "The clock stops",
   "commands.spawnadmin.return": "Sent %s player(s) back to where they were taken",
-  "commands.spawnadmin.return.failed": "Nobody to send back: the player is not in the realm"
+  "commands.spawnadmin.return.failed": "Nobody to send back: the player is not in the realm",
+  "message.spawnadmin.heard_target": "The heavens have heard. They will come for %s.",
+  "subtitles.spawnadmin.first_crack": "Glass cracks somewhere above",
+  "subtitles.spawnadmin.rift_open": "The sky opens",
+  "subtitles.spawnadmin.grab_close": "Giant fingers close",
+  "subtitles.spawnadmin.lift_wind": "Rushing air",
+  "subtitles.spawnadmin.vanish_flash": "A flash of heaven"
 }

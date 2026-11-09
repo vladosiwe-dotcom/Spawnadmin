@@ -299,54 +299,61 @@ def shepard(dur, start_rate=0.15, end_rate=1.2, amp=1.0):
 
 
 def theme():
-    """33 s score, aligned to SkyTimeline: GLOW 0, CRACK 2, SHATTER 7.5, FALL 9, FREEZE 15,
-    HAND 16.5, GRAB 19.5, LIFT 20.5, TELEPORT 22.75, RESTORE 23.25 .. 32.25.
+    """43 s score, aligned to SkyTimeline (seconds after the first crack):
+    FIRST_CRACK 0, SPREAD 3, CONNECT 9, CHIPS 12, FRAGMENTS 13.5, FALL 15, FREEZE 21, HAND 22.5,
+    GRAB 26.5, GRIP 27.3, LIFT 28, TELEPORT 31, RESTORE 32 .. 42.
     No bells, chimes, celesta or music box: piano, strings, plucks, choir, drums only."""
-    total = 33.5
+    total = 43.0
     pre = buf(total)
     post = buf(total)
-    FREEZE = 15.0
+    FREEZE = 21.0
 
-    # GLOW: an innocent piano tune over hushed strings, as if nothing could go wrong.
-    tune = ["E4", "G4", "C5", "B4", "G4", "A4", "G4", "E4", "D4", "E4", "G4", "C5", "D5", "B4", "G4", "C5"]
-    beat = 0.36
+    # FIRST_CRACK: an innocent piano tune over hushed strings, as if nothing could go wrong.
+    tune = ["E4", "G4", "C5", "B4", "G4", "A4", "G4", "E4", "D4", "E4", "G4", "C5", "D5", "B4", "G4", "C5",
+            "E4", "G4", "C5", "B4", "A4", "G4"]
+    beat = 0.5
     for i, n in enumerate(tune):
-        at = 0.15 + i * beat
-        warp = max(0.0, (at - 2.0) / 5.0) * 0.05  # from CRACK on, the tape starts to sag
-        if i == 9:
-            n = "F#4"  # the first wrong note
-        add(pre, warped_piano(hz(n), 1.8, 0.5, warp), at, -0.2 + 0.4 * (i % 2))
-    s0 = strings([hz("C3"), hz("G3"), hz("E4")], 3.0, 0.35, 1.2, 1.0, bright=1800)
+        at = 0.4 + i * beat
+        warp = max(0.0, (at - 3.0) / 8.0) * 0.06  # from SPREAD on, the tape starts to sag
+        if i in (9, 17):
+            n = {9: "F#4", 17: "F#4"}[i]  # wrong notes creep in
+        add(pre, warped_piano(hz(n), 2.0, 0.45, warp), at, -0.2 + 0.4 * (i % 2))
+    s0 = strings([hz("C3"), hz("G3"), hz("E4")], 6.0, 0.3, 2.0, 2.0, bright=1700)
     pre[:len(s0)] += s0
 
-    # CRACK: a cello line creeping up chromatically, plucked strings in an uneasy 5/8.
-    for i, n in enumerate(["D2", "Eb2", "E2", "F2"]):
-        c = strings([hz(n), hz(n) * 2], 1.6, 0.55, 0.25, 0.5, bright=1500)
-        i0 = secs(2.0 + i * 1.35)
+    # SPREAD -> CONNECT: a cello line creeping up chromatically, plucks in an uneasy 5/8 that thicken.
+    for i, n in enumerate(["D2", "Eb2", "E2", "F2", "F#2"]):
+        c = strings([hz(n), hz(n) * 2], 2.4, 0.5 + 0.08 * i, 0.4, 0.6, bright=1500)
+        i0 = secs(3.0 + i * 1.9)
         pre[i0:i0 + len(c)] += c
-    at = 2.2
-    for i in range(14):
-        add(pre, pizz(hz(["D3", "A3", "Eb3", "Bb3"][i % 4]), 1.0, 0.32), at, float(RNG.uniform(-0.8, 0.8)))
-        at += [0.3, 0.3, 0.45, 0.3, 0.45][i % 5] * (1 - i * 0.02)
+    at = 6.0
+    k = 0
+    while at < 13.2:
+        add(pre, pizz(hz(["D3", "A3", "Eb3", "Bb3", "F3"][k % 5]), 1.0, 0.25 + 0.03 * k), at, float(RNG.uniform(-0.8, 0.8)))
+        at += [0.34, 0.34, 0.5, 0.34, 0.5][k % 5] * max(0.45, 1 - k * 0.025)
+        k += 1
+    # CHIPS: a tension swell.
+    c = strings([hz("A2"), hz("D3"), hz("Eb3"), hz("G#3")], 1.6, 0.8, 1.2, 0.05, bright=2600)
+    pre[secs(12.0):secs(12.0) + len(c)] += c
 
     pre = reverb(pre, 3.0, 0.36, 5000, seed=11)[: secs(total)]
-    # SHATTER: sudden silence...
-    pre[secs(7.5):] = 0
+    # FRAGMENTS: sudden silence...
+    pre[secs(13.5):] = 0
     # ...then a reversed piano chord sucking everything in.
-    rev = buf(1.5)
+    rev = buf(1.0)
     for n in ("D3", "A3", "Eb4", "G4", "D5"):
-        add(rev, piano(hz(n), 1.5, 0.5), 0.0, 0.0)
-    rev = reverb(rev, 2.0, 0.5, 4500, seed=12)[: secs(1.5)][::-1]
-    pre[secs(8.1):secs(8.1) + len(rev)] += rev * 1.4
+        add(rev, piano(hz(n), 1.0, 0.5), 0.0, 0.0)
+    rev = reverb(rev, 1.6, 0.5, 4500, seed=12)[: secs(1.0)][::-1]
+    pre[secs(14.0):secs(14.0) + len(rev)] += rev * 1.5
 
     # FALL: the hit. A dissonant string cluster, a sub boom, rushing string runs falling down a
-    # whole-tone scale over a 7/8 drum.
+    # whole-tone scale over a 7/8 drum, for the six seconds of falling glass.
     hit = buf(6.5)
-    hit += strings([hz("D2"), hz("A2"), hz("D3"), hz("Eb3"), hz("F3"), hz("A3"), hz("Eb4")], 6.5, 1.5, 0.02, 2.5, bright=2800)
+    hit += strings([hz("D2"), hz("A2"), hz("D3"), hz("Eb3"), hz("F3"), hz("A3"), hz("Eb4")], 6.5, 1.5, 0.02, 2.0, bright=2800)
     add(hit, sine(hz("D1"), 2.5, 1.2, 0.002, 2.0), 0.0)
     whole = ["C", "D", "E", "F#", "G#", "A#"]
     at, step = 0.05, 0.12
-    for i in range(44):
+    for i in range(48):
         octv = max(3, 5 - i // 7)
         n = whole[(len(whole) - 1 - i) % len(whole)] + str(octv)
         add(hit, spiccato(hz(n), 0.6), at, float(np.sin(i * 1.7)) * 0.7)
@@ -355,55 +362,54 @@ def theme():
             break
     pattern = [0, 0.43, 0.86, 1.07, 1.5, 1.71, 1.93]  # 7/8 accents
     for bar_i in range(3):
-        for k, off in enumerate(pattern):
-            add(hit, drum(72.0 if k in (0, 3) else 98.0, 0.9, 0.75 if k in (0, 3) else 0.35), 0.3 + bar_i * 2.0 + off, 0.0)
+        for k2, off in enumerate(pattern):
+            add(hit, drum(72.0 if k2 in (0, 3) else 98.0, 0.9, 0.75 if k2 in (0, 3) else 0.35), 0.3 + bar_i * 2.0 + off, 0.0)
     hit = reverb(hit, 3.5, 0.35, 4500, seed=13)[: secs(6.5)]
-    i0 = secs(9.0)
+    i0 = secs(15.0)
     pre[i0:i0 + len(hit)] += hit
 
     # FREEZE: the whole score winds down like a tape losing power.
     pre = tape_stop(pre, FREEZE - 0.15, 0.75)
-
-    # One low string note hangs in the stopped air.
     c = strings([hz("E2")], 1.6, 0.35, 0.3, 0.5, bright=900, vibrato=0.0)
     post[secs(FREEZE + 0.4):secs(FREEZE + 0.4) + len(c)] += c
 
     # HAND: the choir enters in a far, warm key (D minor -> Db major), strings beneath.
-    c = choir([hz("Db3"), hz("F3"), hz("Ab3"), hz("Db4")], 3.2, 1.5, 1.6, 0.3)
-    post[secs(16.5):secs(16.5) + len(c)] += c
-    c = strings([hz("Db2"), hz("Ab2"), hz("F3")], 3.2, 0.6, 1.6, 0.3, bright=1600)
-    post[secs(16.5):secs(16.5) + len(c)] += c
-    # GRAB: an abrupt lift by a semitone, to D major.
+    c = choir([hz("Db3"), hz("F3"), hz("Ab3"), hz("Db4")], 4.2, 1.5, 2.0, 0.3)
+    post[secs(22.5):secs(22.5) + len(c)] += c
+    c = strings([hz("Db2"), hz("Ab2"), hz("F3")], 4.2, 0.6, 2.0, 0.3, bright=1600)
+    post[secs(22.5):secs(22.5) + len(c)] += c
+    # GRIP: an abrupt lift by a semitone, to D major, on a timpani stroke.
     c = choir([hz("D3"), hz("F#3"), hz("A3"), hz("D4"), hz("F#4")], 1.2, 1.7, 0.03, 0.4)
-    post[secs(19.5):secs(19.5) + len(c)] += c
+    post[secs(27.3):secs(27.3) + len(c)] += c
+    add(post, drum(55.0, 1.2, 1.0), 27.3, 0.0)
     # LIFT: an endless rise.
-    sh = shepard(2.25, 0.4, 2.0, 0.2)
-    add(post, sh, 20.5, -0.2)
-    add(post, sh * 0.8, 20.52, 0.2)
+    sh = shepard(3.0, 0.4, 2.2, 0.2)
+    add(post, sh, 28.0, -0.2)
+    add(post, sh * 0.8, 28.02, 0.2)
 
     # TELEPORT: a breath of silence, then the whole ensemble blooms (no bells).
-    post[secs(22.75):secs(23.0)] *= np.linspace(1, 0, secs(0.25))[:, None]
+    post[secs(31.0):secs(31.25)] *= np.linspace(1, 0, secs(0.25))[:, None]
     c = strings([hz("D2"), hz("A2"), hz("D3"), hz("F#3"), hz("A3"), hz("D4")], 3.5, 1.4, 0.15, 2.5, bright=3000)
-    post[secs(23.0):secs(23.0) + len(c)] += c
+    post[secs(31.25):secs(31.25) + len(c)] += c
     c = choir([hz("D3"), hz("A3"), hz("F#4")], 3.0, 1.1, 0.2, 2.0)
-    post[secs(23.0):secs(23.0) + len(c)] += c
-    for k in range(10):  # a soft timpani roll into the chord
-        add(post, drum(62.0, 0.6, 0.15 + 0.05 * k), 22.4 + k * 0.06, 0.0)
+    post[secs(31.25):secs(31.25) + len(c)] += c
+    for k2 in range(10):
+        add(post, drum(62.0, 0.6, 0.15 + 0.05 * k2), 30.65 + k2 * 0.06, 0.0)
 
     # RESTORE: the piano tune again, first backwards, then forwards in a new key.
-    box = buf(4.5)
-    for i, n in enumerate(tune[:12]):
-        add(box, piano(hz(n), 1.8, 0.45), i * 0.32, -0.2 + 0.4 * (i % 2))
-    box = reverb(box, 2.5, 0.4, 4500, seed=14)[: secs(4.5)]
-    post[secs(23.6):secs(23.6) + len(box)] += box[::-1] * 0.9
+    box = buf(5.0)
+    for i, n in enumerate(tune[:14]):
+        add(box, piano(hz(n), 1.8, 0.45), i * 0.33, -0.2 + 0.4 * (i % 2))
+    box = reverb(box, 2.5, 0.4, 4500, seed=14)[: secs(5.0)]
+    post[secs(32.5):secs(32.5) + len(box)] += box[::-1] * 0.9
     for i, n in enumerate(["F#4", "A#4", "C#5", "F#5", "F5", "C#5", "A#4", "F#4"]):
-        add(post, piano(hz(n), 2.2, 0.42), 28.2 + i * 0.42, -0.2 + 0.4 * (i % 2))
-    c = strings([hz("F#2"), hz("C#3"), hz("A#3"), hz("F#4")], 5.0, 0.5, 1.5, 3.0, bright=1500)
-    post[secs(28.0):secs(28.0) + len(c)] += c
+        add(post, piano(hz(n), 2.4, 0.42), 37.8 + i * 0.45, -0.2 + 0.4 * (i % 2))
+    c = strings([hz("F#2"), hz("C#3"), hz("A#3"), hz("F#4")], 5.5, 0.5, 1.5, 3.0, bright=1500)
+    post[secs(37.5):secs(37.5) + len(c)] += c
 
     post = reverb(post, 4.0, 0.42, 4500, seed=15)[: secs(total)]
     out = pre + post
-    out *= env(len(out), 0.01, 1.5)[:, None]
+    out *= env(len(out), 0.6, 1.5)[:, None]
     return normalize(out, 0.8)
 
 

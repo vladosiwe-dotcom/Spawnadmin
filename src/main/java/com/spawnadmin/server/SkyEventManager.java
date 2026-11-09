@@ -3,27 +3,30 @@ package com.spawnadmin.server;
 import com.spawnadmin.SpawnAdmin;
 import com.spawnadmin.SpawnAdminConfig;
 import com.spawnadmin.network.SkyEventEndPayload;
+import com.spawnadmin.network.SkyEventPreparePayload;
 import com.spawnadmin.network.SpawnAdminNetwork;
 import com.spawnadmin.realm.AdminRealm;
 import com.spawnadmin.registry.ModSounds;
 import com.spawnadmin.sky.SkyTimeline;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.ai.attributes.AttributeInstance;
-import net.minecraft.world.entity.ai.attributes.AttributeModifier;
-import net.neoforged.neoforge.common.NeoForgeMod;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.common.NeoForgeMod;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
+import net.neoforged.neoforge.event.tick.EntityTickEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
@@ -37,13 +40,21 @@ import java.util.UUID;
 /**
  * Authoritative state machine of Heavenly Summoning events.
  *
- * <p>The server only decides <em>when</em> things happen and who is carried away; clients build
- * the whole spectacle from the synced seed and start tick. No blocks, entities or world sky are
- * touched.</p>
+ * <p>The server decides <em>who</em> is taken and <em>when</em> each stage happens; clients build
+ * the spectacle from the synced seed and start tick. Every stage change is re-broadcast as a
+ * checkpoint, so all clients agree on the stage and late joiners get the current state. No blocks,
+ * entities or world sky are touched. Time is stopped locally (entities near the scene stop
+ * ticking), never for the whole server and never for other players.</p>
  */
 public final class SkyEventManager {
-    /** Pending horn calls during the hidden wait, keyed by player. Value: server tick to fire. */
-    private static final Map<UUID, Long> PENDING = new LinkedHashMap<>();
+    /** Radius around the scene in which non-player entities freeze while time is stopped. */
+    public static final double FREEZE_RADIUS = 96.0;
+
+    private record Pending(long fireAt, UUID caller, long seed) {
+    }
+
+    /** Hidden waits, keyed by the target. */
+    private static final Map<UUID, Pending> PENDING = new LinkedHashMap<>();
     private static final Map<Integer, ServerSkyEvent> EVENTS = new LinkedHashMap<>();
     private static int nextId = 1;
     /** Temporary flight permission so the server does not kick the frozen/lifted target. */
@@ -55,6 +66,7 @@ public final class SkyEventManager {
     public static void registerListeners(IEventBus bus) {
         bus.addListener(SkyEventManager::onServerTick);
         bus.addListener(SkyEventManager::onPlayerTick);
+        bus.addListener(SkyEventManager::onEntityTick);
         bus.addListener(SkyEventManager::onIncomingDamage);
         bus.addListener(SkyEventManager::onLogin);
         bus.addListener(SkyEventManager::onChangedDimension);
@@ -69,15 +81,26 @@ public final class SkyEventManager {
         return PENDING.containsKey(player.getUUID()) || findByTarget(player.getUUID()) != null;
     }
 
-    /** Horn call: the heavens answer after the configured silent delay. */
+    /** Self-summon: the horn blower is also the target. */
     public static void scheduleSummon(ServerPlayer player) {
-        long fireAt = player.server.getTickCount() + SpawnAdminConfig.HIDDEN_DELAY_SECONDS.get() * 20L;
-        PENDING.put(player.getUUID(), fireAt);
+        scheduleSummon(player, player);
+    }
+
+    /**
+     * Horn call on {@code target}. Nothing becomes visible for the configured delay; the clients
+     * only receive the seed so they can prepare the fracture in the background. The clock that
+     * counts the wait is heard by {@code caller} alone, so the target has no warning.
+     */
+    public static void scheduleSummon(ServerPlayer target, ServerPlayer caller) {
+        long seed = target.getRandom().nextLong();
+        long fireAt = target.server.getTickCount() + SpawnAdminConfig.HIDDEN_DELAY_SECONDS.get() * 20L;
+        PENDING.put(target.getUUID(), new Pending(fireAt, caller.getUUID(), seed));
+        SpawnAdminNetwork.sendToLevel(target.serverLevel(), new SkyEventPreparePayload(seed));
     }
 
     /** Starts the visible part immediately. Returns false if it could not start. */
     public static boolean startNow(ServerPlayer player) {
-        PENDING.remove(player.getUUID());
+        Pending pending = PENDING.remove(player.getUUID());
         if (findByTarget(player.getUUID()) != null) {
             return false;
         }
@@ -91,8 +114,17 @@ public final class SkyEventManager {
             player.displayClientMessage(Component.translatable("message.spawnadmin.sky_busy"), true);
             return false;
         }
-        ServerSkyEvent event = new ServerSkyEvent(nextId++, level, level.getRandom().nextLong(), player.position(),
+        long seed = pending != null ? pending.seed() : level.getRandom().nextLong();
+        if (pending != null) {
+            // The hour has come: only the one who blew the horn hears the clock strike.
+            ServerPlayer caller = player.server.getPlayerList().getPlayer(pending.caller());
+            if (caller != null) {
+                caller.playNotifySound(ModSounds.HOUR_STRIKE.get(), SoundSource.AMBIENT, 0.8f, 1.0f);
+            }
+        }
+        ServerSkyEvent event = new ServerSkyEvent(nextId++, level, seed, player.position(),
                 player.getUUID(), player.getId(), level.getGameTime());
+        event.startYaw = player.getYRot();
         EVENTS.put(event.id, event);
         broadcast(event);
         SpawnAdmin.LOGGER.info("Heavenly Summoning #{} started for {} in {}", event.id, player.getName().getString(),
@@ -126,7 +158,7 @@ public final class SkyEventManager {
         if (event.aborted || event.teleported || event.elapsed() >= event.restoreAt) {
             return false;
         }
-        abort(event);
+        abort(event, "cancelled");
         return true;
     }
 
@@ -145,26 +177,42 @@ public final class SkyEventManager {
         return event == null ? -1 : event.restoreAt;
     }
 
+    /** True if non-player entities at {@code pos} in {@code level} are frozen by a scene. */
+    public static boolean isTimeFrozenAt(ServerLevel level, Vec3 pos) {
+        for (ServerSkyEvent event : EVENTS.values()) {
+            if (event.level == level && timeStopped(event) && event.center.distanceToSqr(pos) < FREEZE_RADIUS * FREEZE_RADIUS) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // ------------------------------------------------------------------ ticking
 
     private static void onServerTick(ServerTickEvent.Post tick) {
         MinecraftServer server = tick.getServer();
         long now = server.getTickCount();
-        Iterator<Map.Entry<UUID, Long>> pending = PENDING.entrySet().iterator();
+        Iterator<Map.Entry<UUID, Pending>> pending = PENDING.entrySet().iterator();
         List<ServerPlayer> ready = new ArrayList<>();
         while (pending.hasNext()) {
-            Map.Entry<UUID, Long> e = pending.next();
-            if (now < e.getValue()) {
-                tickClock(server, e.getKey(), e.getValue() - now);
+            Map.Entry<UUID, Pending> e = pending.next();
+            Pending p = e.getValue();
+            ServerPlayer target = server.getPlayerList().getPlayer(e.getKey());
+            if (target == null || !target.isAlive()) {
+                pending.remove();
                 continue;
             }
-            pending.remove();
-            ServerPlayer player = server.getPlayerList().getPlayer(e.getKey());
-            if (player != null && player.isAlive()) {
-                ready.add(player);
+            if (now < p.fireAt()) {
+                tickClock(server, p.caller(), p.fireAt() - now);
+                continue;
+            }
+            ready.add(target);
+        }
+        for (ServerPlayer target : ready) {
+            if (!startNow(target)) {
+                PENDING.remove(target.getUUID());
             }
         }
-        ready.forEach(SkyEventManager::startNow);
 
         Iterator<ServerSkyEvent> it = EVENTS.values().iterator();
         while (it.hasNext()) {
@@ -176,19 +224,18 @@ public final class SkyEventManager {
         }
     }
 
-    /** The hidden wait is silent for the eyes only: a clock counts down the seconds. */
-    private static void tickClock(MinecraftServer server, UUID uuid, long remaining) {
+    /** The clock counting the hidden wait, heard only by the one who blew the horn. */
+    private static void tickClock(MinecraftServer server, UUID callerId, long remaining) {
         if (remaining % 20 != 0) {
             return;
         }
-        ServerPlayer player = server.getPlayerList().getPlayer(uuid);
-        if (player == null) {
+        ServerPlayer caller = server.getPlayerList().getPlayer(callerId);
+        if (caller == null) {
             return;
         }
         boolean tock = (remaining / 20) % 2 == 0;
-        float volume = remaining <= 60 ? 1.4f : 1.0f;
-        player.level().playSound(null, player.getX(), player.getY(), player.getZ(),
-                (tock ? ModSounds.CLOCK_TOCK : ModSounds.CLOCK_TICK).get(), SoundSource.AMBIENT, volume, 1.0f);
+        float volume = remaining <= 60 ? 1.0f : 0.7f;
+        caller.playNotifySound((tock ? ModSounds.CLOCK_TOCK : ModSounds.CLOCK_TICK).get(), SoundSource.AMBIENT, volume, 1.0f);
     }
 
     /** @return true when the event is finished and must be removed. */
@@ -197,9 +244,14 @@ public final class SkyEventManager {
         ServerPlayer target = server.getPlayerList().getPlayer(event.target);
 
         if (!event.teleported && !event.aborted && t < SkyTimeline.TELEPORT) {
-            boolean lost = target == null || !target.isAlive() || target.level() != event.level;
-            if (lost) {
-                abort(event);
+            if (target == null) {
+                abort(event, "target left the game");
+            } else if (!target.isAlive()) {
+                abort(event, "target died");
+            } else if (target.level() != event.level) {
+                abort(event, "target changed dimension");
+            } else if (event.lockPos != null && t < SkyTimeline.LIFT && target.position().distanceTo(event.lockPos) > 8.0) {
+                abort(event, "target was teleported away");
             }
         }
 
@@ -216,6 +268,12 @@ public final class SkyEventManager {
             }
         }
 
+        // Stage checkpoints: every client is told the server's view of the current stage.
+        SkyTimeline.Phase phase = event.phase();
+        if (phase != event.lastPhase) {
+            event.lastPhase = phase;
+            broadcast(event);
+        }
         if (!event.restoreAnnounced && t >= event.restoreAt) {
             event.restoreAnnounced = true;
             broadcast(event);
@@ -246,12 +304,13 @@ public final class SkyEventManager {
         } else {
             target.displayClientMessage(Component.translatable("message.spawnadmin.no_realm"), false);
         }
+        broadcast(event);
     }
 
-    private static void abort(ServerSkyEvent event) {
+    private static void abort(ServerSkyEvent event, String reason) {
         event.aborted = true;
         long t = event.elapsed();
-        event.restoreAt = (int) Math.max(t + 1, SkyTimeline.CRACK);
+        event.restoreAt = (int) Math.max(t + 1, SkyTimeline.SPREAD);
         event.restoreAnnounced = false;
         ServerPlayer target = event.level.getServer().getPlayerList().getPlayer(event.target);
         if (target != null) {
@@ -261,7 +320,7 @@ public final class SkyEventManager {
                 target.addEffect(new MobEffectInstance(MobEffects.SLOW_FALLING, 200, 0));
             }
         }
-        SpawnAdmin.LOGGER.info("Heavenly Summoning #{} aborted at tick {}", event.id, t);
+        SpawnAdmin.LOGGER.info("Heavenly Summoning #{} aborted at tick {}: {}", event.id, t, reason);
     }
 
     private static void revokeFlight(ServerSkyEvent event, ServerPlayer target) {
@@ -274,12 +333,17 @@ public final class SkyEventManager {
         }
     }
 
-    // ------------------------------------------------------------------ player hooks
+    private static boolean timeStopped(ServerSkyEvent event) {
+        long t = event.elapsed();
+        return !event.aborted && t >= SkyTimeline.FREEZE && t < Math.min(event.restoreAt, SkyTimeline.TELEPORT + 20);
+    }
+
+    // ------------------------------------------------------------------ entity hooks
 
     /**
-     * While the hand lifts the target, the client drives the player's position through solid
-     * terrain if needed. {@code noPhysics} is reset at the start of every player tick, so it is
-     * set again after the tick to keep the server's "moved wrongly" check out of the way.
+     * While the hand lifts the target, the client drives the player's position, possibly through
+     * terrain. {@code noPhysics} is reset at the start of every player tick, so it is set again
+     * after the tick to keep the server's "moved wrongly" check out of the way.
      */
     private static void onPlayerTick(PlayerTickEvent.Post tick) {
         if (!(tick.getEntity() instanceof ServerPlayer player)) {
@@ -292,6 +356,17 @@ public final class SkyEventManager {
         long t = event.elapsed();
         if (t >= SkyTimeline.LIFT && t < SkyTimeline.TELEPORT) {
             player.noPhysics = true;
+        }
+    }
+
+    /** Local time stop: mobs, items, projectiles and falling blocks near the scene stand still. */
+    private static void onEntityTick(EntityTickEvent.Pre tick) {
+        Entity entity = tick.getEntity();
+        if (entity instanceof Player || EVENTS.isEmpty() || !(entity.level() instanceof ServerLevel level)) {
+            return;
+        }
+        if (isTimeFrozenAt(level, entity.position())) {
+            tick.setCanceled(true);
         }
     }
 

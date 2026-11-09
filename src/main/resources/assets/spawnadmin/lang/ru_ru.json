@@ -1,6 +1,6 @@
 {
   "item.spawnadmin.heaven_horn": "Рог Небес",
-  "item.spawnadmin.heaven_horn.desc1": "Протруби, и небо услышит.",
+  "item.spawnadmin.heaven_horn.desc1": "Направь на игрока и протруби. Небо придёт за ним.",
   "item.spawnadmin.heaven_horn.desc2": "В измерении администратора возвращает домой.",
   "message.spawnadmin.already_heard": "Небеса уже услышали тебя...",
   "message.spawnadmin.already_in_realm": "Ты уже за пределами неба.",
@@ -13,7 +13,6 @@
   "commands.spawnadmin.cancel": "Отменено небесных событий: %s",
   "dimension.spawnadmin.admin_realm": "Измерение администратора",
   "subtitles.spawnadmin.heaven_horn": "Звучит Рог Небес",
-  "subtitles.spawnadmin.sky_glow": "Небо светится",
   "subtitles.spawnadmin.sky_crack": "Небо трескается",
   "subtitles.spawnadmin.sky_shatter": "Небо разбивается",
   "subtitles.spawnadmin.time_stop": "Время останавливается",
@@ -25,5 +24,11 @@
   "subtitles.spawnadmin.hour_strike": "Бьёт час",
   "subtitles.spawnadmin.clock_halt": "Часы останавливаются",
   "commands.spawnadmin.return": "Возвращено туда, откуда забрали: %s",
-  "commands.spawnadmin.return.failed": "Некого возвращать: игрок не в измерении администратора"
+  "commands.spawnadmin.return.failed": "Некого возвращать: игрок не в измерении администратора",
+  "message.spawnadmin.heard_target": "Небеса услышали. Они придут за %s.",
+  "subtitles.spawnadmin.first_crack": "Где-то наверху треснуло стекло",
+  "subtitles.spawnadmin.rift_open": "Небо раскрывается",
+  "subtitles.spawnadmin.grab_close": "Смыкаются огромные пальцы",
+  "subtitles.spawnadmin.lift_wind": "Рёв воздуха",
+  "subtitles.spawnadmin.vanish_flash": "Небесная вспышка"
 }

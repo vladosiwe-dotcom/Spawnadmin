@@ -1,12 +1,17 @@
 package com.spawnadmin.client;
 
 import com.spawnadmin.network.SkyEventEndPayload;
+import com.spawnadmin.network.SkyEventPreparePayload;
 import com.spawnadmin.network.SkyEventSyncPayload;
 import com.spawnadmin.network.SpawnAdminNetwork;
 import com.spawnadmin.registry.ModSounds;
-import com.spawnadmin.sky.HandRig;
+import com.spawnadmin.server.SkyEventManager;
+import com.spawnadmin.sky.SkyScene;
 import com.spawnadmin.sky.SkyTimeline;
+import com.spawnadmin.sky.geom.DomeShape;
+import com.spawnadmin.sky.geom.Fracture;
 import com.spawnadmin.sky.geom.V3;
+import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
@@ -14,6 +19,7 @@ import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 
@@ -21,26 +27,40 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /** Registry of the sky events this client knows about, plus per-tick client logic. */
 final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
     static final ClientSkyEvents INSTANCE = new ClientSkyEvents();
 
-    /** Sounds are heard in full within this distance of the event, fading out further away. */
+    /** Music and sky-wide sounds are heard in full within this distance of the event. */
     private static final double HEARING_RANGE = 260.0;
 
     private final Map<Integer, ClientSkyEvent> events = new LinkedHashMap<>();
+    /** Fractures prepared in the background during the hidden wait, keyed by seed. */
+    private final Map<Long, CompletableFuture<Fracture>> prepared = new LinkedHashMap<>();
     /** Keeps the HUD hidden through the white-out after the teleport (the old level is gone by then). */
     private long hudHiddenUntil;
-    /** Score that keeps playing after its event was left behind (the summoner carried away). */
+    /** Score that keeps playing after its event was left behind (the target carried away). */
     private SoundInstance lingeringTheme;
     private int idleTicks;
+    private final java.util.Set<Integer> gripPlayed = new java.util.HashSet<>();
 
     private ClientSkyEvents() {
     }
 
     Collection<ClientSkyEvent> all() {
         return events.values();
+    }
+
+    // ------------------------------------------------------------------ network
+
+    @Override
+    public void onPrepare(SkyEventPreparePayload payload) {
+        if (prepared.size() > 8) {
+            prepared.remove(prepared.keySet().iterator().next());
+        }
+        prepared.computeIfAbsent(payload.seed(), seed -> CompletableFuture.supplyAsync(() -> Fracture.generate(seed), Util.backgroundExecutor()));
     }
 
     @Override
@@ -51,17 +71,40 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
         }
         ClientSkyEvent event = events.get(payload.id());
         if (event == null || event.level != level) {
-            event = new ClientSkyEvent(payload, level);
+            CompletableFuture<Fracture> fracture = prepared.remove(payload.seed());
+            if (fracture == null) {
+                fracture = CompletableFuture.supplyAsync(() -> Fracture.generate(payload.seed()), Util.backgroundExecutor());
+            }
+            event = new ClientSkyEvent(payload, level, fracture);
             // A late joiner starts silently in whatever phase is running.
             event.lastPhase = SkyTimeline.phaseAt(event.time(0), payload.restoreAt());
             events.put(payload.id(), event);
         } else {
             event.state = payload;
-            // Aborted before the teleport: the score no longer matches what happens, cut it.
             if (payload.restoreAt() < SkyTimeline.RESTORE) {
-                stopTheme(event);
+                stopTheme(event); // aborted: the score no longer matches what happens
             }
         }
+    }
+
+    @Override
+    public void onEnd(SkyEventEndPayload payload) {
+        ClientSkyEvent event = events.remove(payload.id());
+        if (event != null) {
+            stopTheme(event);
+        }
+        gripPlayed.remove(payload.id());
+    }
+
+    void clear() {
+        events.values().forEach(ClientSkyEvents::stopTheme);
+        events.clear();
+        prepared.clear();
+        gripPlayed.clear();
+        SceneCopy.release();
+        ScreenFlash.clear();
+        hudHiddenUntil = 0;
+        lingeringTheme = null;
     }
 
     private static void stopTheme(ClientSkyEvent event) {
@@ -71,31 +114,9 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
         }
     }
 
-    /**
-     * The summoner sees nothing but the sky: no hotbar, crosshair, hand, chat or messages, from the
-     * moment the sky lights up until they have arrived beyond it.
-     */
-    boolean hideHud() {
-        if (System.currentTimeMillis() < hudHiddenUntil) {
-            return true;
-        }
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null) {
-            return false;
-        }
-        for (ClientSkyEvent event : events.values()) {
-            if (event.state.targetEntityId() != mc.player.getId()) {
-                continue;
-            }
-            double t = event.time(0);
-            if (t >= SkyTimeline.GLOW && t < SkyTimeline.TELEPORT + 2 && t < event.restoreAt()) {
-                return true;
-            }
-        }
-        return false;
-    }
+    // ------------------------------------------------------------------ queries
 
-    /** True while a sky event is close enough that its score should replace the game music. */
+    /** True while a score is playing close enough that it should replace the game music. */
     boolean scoreActive() {
         Minecraft mc = Minecraft.getInstance();
         if (lingeringTheme != null) {
@@ -108,32 +129,125 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
             return false;
         }
         for (ClientSkyEvent event : events.values()) {
-            double d = mc.player.position().distanceTo(new Vec3(event.state.cx(), event.state.cy(), event.state.cz()));
-            if (d < HEARING_RANGE * 1.2) {
+            if (event.time(0) >= 0 && distanceTo(event, mc.player.position()) < HEARING_RANGE * 1.2) {
                 return true;
             }
         }
         return false;
     }
 
-    @Override
-    public void onEnd(SkyEventEndPayload payload) {
-        ClientSkyEvent event = events.remove(payload.id());
-        if (event != null) {
-            stopTheme(event);
+    /** The target sees nothing but the sky: no HUD from the first crack until they have arrived. */
+    boolean hideHud() {
+        if (System.currentTimeMillis() < hudHiddenUntil) {
+            return true;
         }
+        ClientSkyEvent event = localTargetEvent();
+        if (event == null) {
+            return false;
+        }
+        double t = event.time(0);
+        return t >= SkyTimeline.FIRST_CRACK && t < SkyTimeline.TELEPORT + 2 && t < event.restoreAt();
     }
 
-    void clear() {
-        events.values().forEach(ClientSkyEvents::stopTheme);
-        events.clear();
-        hudHiddenUntil = 0;
-        lingeringTheme = null;
-        SceneCopy.release();
-        ScreenFlash.clear();
+    /** Client side of the local time stop: entities near the scene stop animating too. */
+    boolean isFrozenAt(Vec3 pos) {
+        for (ClientSkyEvent event : events.values()) {
+            SkyScene scene = event.scene();
+            if (scene == null) continue;
+            double t = event.time(0);
+            boolean stopped = t >= SkyTimeline.FREEZE && t < Math.min(event.restoreAt(), SkyTimeline.TELEPORT + 20)
+                    && event.restoreAt() > SkyTimeline.FREEZE;
+            if (stopped && distanceTo(event, pos) < SkyEventManager.FREEZE_RADIUS) {
+                return true;
+            }
+        }
+        return false;
     }
 
-    /** Client tick: phase sounds, cleanup of stale events, release of idle GPU resources. */
+    /** Scale of a player model vanishing into the light (1 = normal). */
+    float vanishScale(Entity entity, float partial) {
+        for (ClientSkyEvent event : events.values()) {
+            if (event.state.targetEntityId() == entity.getId() && event.restoreAt() >= SkyTimeline.TELEPORT) {
+                double t = event.time(partial);
+                return (float) (1.0 - 0.97 * SkyScene.smooth(SkyTimeline.progress(t, SkyTimeline.TELEPORT - 26, SkyTimeline.TELEPORT)));
+            }
+        }
+        return 1f;
+    }
+
+    /** Camera shake (degrees) for the local player at render time. */
+    float[] cameraShake(float partial) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || events.isEmpty()) {
+            return null;
+        }
+        double secs = System.nanoTime() / 1e9;
+        float pitch = 0, yaw = 0, roll = 0;
+        for (ClientSkyEvent event : events.values()) {
+            double t = event.time(partial);
+            if (t < 0 || event.finished(t)) continue;
+            boolean target = event.state.targetEntityId() == mc.player.getId();
+            double d = distanceTo(event, mc.player.position());
+            double near = 1 - SkyScene.smoothstep(40, 140, d);
+            double a = 0;
+            double fall = t < event.restoreAt() ? Math.exp(-Math.abs(t - SkyTimeline.FALL) / 12.0) : 0;
+            double grip = t >= SkyTimeline.GRIP && t < event.restoreAt() ? Math.exp(-(t - SkyTimeline.GRIP) / 7.0) : 0;
+            if (target) {
+                a += 0.06 * SkyScene.smooth(SkyTimeline.progress(t, SkyTimeline.CONNECT, SkyTimeline.FALL));
+                a += 1.1 * fall + 1.6 * grip;
+                if (t >= SkyTimeline.LIFT && t < SkyTimeline.TELEPORT) {
+                    a += 0.7 * SkyTimeline.progress(t, SkyTimeline.LIFT, SkyTimeline.TELEPORT);
+                }
+                // The hand looms over them: the view leans a little.
+                roll += (float) (2.4 * SkyScene.smooth(SkyTimeline.progress(t, SkyTimeline.HAND, SkyTimeline.GRAB))
+                        * (1 - SkyScene.smooth(SkyTimeline.progress(t, SkyTimeline.LIFT, SkyTimeline.LIFT + 15))));
+            } else {
+                a += (0.5 * fall + 0.45 * grip) * near;
+            }
+            pitch += (float) (a * (Math.sin(secs * 31) * 0.6 + Math.sin(secs * 47 + 1) * 0.4));
+            yaw += (float) (a * (Math.sin(secs * 37 + 2) * 0.6 + Math.sin(secs * 23 + 3) * 0.4));
+            roll += (float) (a * 0.5 * Math.sin(secs * 29 + 4));
+        }
+        return new float[]{pitch, yaw, roll};
+    }
+
+    /** FOV multiplier: acceleration as the target is pulled up. */
+    double fovMultiplier(float partial) {
+        ClientSkyEvent event = localTargetEvent();
+        if (event == null) {
+            return 1.0;
+        }
+        double t = event.time(partial);
+        if (t < SkyTimeline.LIFT || t >= event.restoreAt()) {
+            return 1.0;
+        }
+        return 1.0 + 0.32 * SkyScene.smooth(SkyTimeline.progress(t, SkyTimeline.LIFT + 10, SkyTimeline.TELEPORT));
+    }
+
+    private ClientSkyEvent localTargetEvent() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return null;
+        }
+        for (ClientSkyEvent event : events.values()) {
+            if (event.state.targetEntityId() == mc.player.getId()) {
+                return event;
+            }
+        }
+        return null;
+    }
+
+    private static double distanceTo(ClientSkyEvent event, Vec3 pos) {
+        return pos.distanceTo(new Vec3(event.state.cx(), event.state.cy(), event.state.cz()));
+    }
+
+    private static Vec3 world(ClientSkyEvent event, V3 local) {
+        return new Vec3(event.state.cx() + local.x(), event.state.cy() + local.y(), event.state.cz() + local.z());
+    }
+
+    // ------------------------------------------------------------------ ticking
+
+    /** Client tick: stage sounds, the carried body on every screen, cleanup of stale events. */
     void tick() {
         Minecraft mc = Minecraft.getInstance();
         ClientLevel level = mc.level;
@@ -141,9 +255,8 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
         while (it.hasNext()) {
             ClientSkyEvent event = it.next();
             if (event.level != level) {
-                // Carried into another dimension: let the score finish its resolution there.
                 if (event.theme != null) {
-                    lingeringTheme = event.theme;
+                    lingeringTheme = event.theme; // carried away: let the score finish its resolution
                 }
                 it.remove();
                 continue;
@@ -153,11 +266,19 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
                 it.remove();
                 continue;
             }
+            if (event.scene() == null) {
+                continue;
+            }
             SkyTimeline.Phase phase = SkyTimeline.phaseAt(t, event.restoreAt());
             if (phase != event.lastPhase) {
                 onPhase(event, phase);
                 event.lastPhase = phase;
             }
+            if (t >= SkyTimeline.GRIP && t < SkyTimeline.LIFT && event.restoreAt() > SkyTimeline.GRIP && gripPlayed.add(event.id)) {
+                V3 held = event.heldPosition(t);
+                play(event, ModSounds.GRAB_CLOSE.get(), SoundSource.AMBIENT, held != null ? world(event, held) : null, 1.0f);
+            }
+            moveRemoteTarget(event, level, t);
         }
         if (events.isEmpty()) {
             if (++idleTicks > 100 && SceneCopy.allocated()) {
@@ -168,50 +289,97 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
         }
     }
 
-    private void onPhase(ClientSkyEvent event, SkyTimeline.Phase phase) {
-        SoundEvent sound = switch (phase) {
-            case GLOW -> ModSounds.SKY_GLOW.get();
-            case CRACK -> ModSounds.SKY_CRACK.get();
-            case FALL -> ModSounds.SKY_SHATTER.get();
-            case FREEZE -> ModSounds.TIME_STOP.get();
-            case HAND -> ModSounds.HAND_APPEAR.get();
-            case LIFT -> ModSounds.GRAB_TELEPORT.get();
-            case RESTORE -> ModSounds.SKY_RESTORE.get();
-            default -> null;
-        };
-        if (sound != null) {
-            playSky(event, sound, SoundSource.AMBIENT);
+    /**
+     * Observers see the target physically carried: the remote player's body follows the exact
+     * same deterministic path as the hand on their screen, instead of lagging server updates.
+     */
+    private void moveRemoteTarget(ClientSkyEvent event, ClientLevel level, double t) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null && event.state.targetEntityId() == mc.player.getId()) {
+            return;
         }
-        if (phase == SkyTimeline.Phase.GLOW) {
-            // The hour has come: the clock strikes and the score begins.
-            playSky(event, ModSounds.HOUR_STRIKE.get(), SoundSource.AMBIENT);
-            Minecraft.getInstance().getMusicManager().stopPlaying();
-            event.theme = playSky(event, ModSounds.THEME_SUMMONING.get(), SoundSource.MUSIC);
-        } else if (phase == SkyTimeline.Phase.FREEZE) {
-            playSky(event, ModSounds.CLOCK_HALT.get(), SoundSource.AMBIENT);
+        V3 now = event.heldPosition(t);
+        if (now == null) {
+            return;
+        }
+        Entity entity = level.getEntity(event.state.targetEntityId());
+        if (entity == null) {
+            return;
+        }
+        V3 prev = event.heldPosition(t - 1);
+        if (prev == null) prev = now;
+        Vec3 w = world(event, now);
+        Vec3 p = world(event, prev);
+        entity.setPos(w.x, w.y, w.z);
+        entity.xo = p.x;
+        entity.yo = p.y;
+        entity.zo = p.z;
+        entity.xOld = p.x;
+        entity.yOld = p.y;
+        entity.zOld = p.z;
+        entity.setDeltaMovement(Vec3.ZERO);
+    }
+
+    private void onPhase(ClientSkyEvent event, SkyTimeline.Phase phase) {
+        SkyScene scene = event.scene();
+        Vec3 impact = world(event, event.toWorld(DomeShape.pointAt(scene.fracture.impact, 0)));
+        Vec3 rift = world(event, event.riftHeart());
+        switch (phase) {
+            case FIRST_CRACK -> {
+                play(event, ModSounds.FIRST_CRACK.get(), SoundSource.AMBIENT, impact, 1.0f);
+                Minecraft.getInstance().getMusicManager().stopPlaying();
+                event.theme = play(event, ModSounds.THEME_SUMMONING.get(), SoundSource.MUSIC, null, 1.0f);
+            }
+            case SPREAD -> play(event, ModSounds.SKY_CRACK.get(), SoundSource.AMBIENT, impact, 1.0f);
+            case FALL -> {
+                play(event, ModSounds.SKY_SHATTER.get(), SoundSource.AMBIENT, rift, 1.0f);
+                play(event, ModSounds.RIFT_OPEN.get(), SoundSource.AMBIENT, rift, 1.0f);
+            }
+            case FREEZE -> {
+                play(event, ModSounds.TIME_STOP.get(), SoundSource.AMBIENT, null, 0.9f);
+                play(event, ModSounds.CLOCK_HALT.get(), SoundSource.AMBIENT, null, 0.8f);
+            }
+            case HAND -> play(event, ModSounds.HAND_APPEAR.get(), SoundSource.AMBIENT, rift, 1.0f);
+            case LIFT -> {
+                V3 held = event.heldPosition(SkyTimeline.LIFT);
+                play(event, ModSounds.LIFT_WIND.get(), SoundSource.AMBIENT, held != null ? world(event, held) : null, 1.0f);
+            }
+            case GONE -> play(event, ModSounds.VANISH_FLASH.get(), SoundSource.AMBIENT, rift, 1.0f);
+            case RESTORE -> play(event, ModSounds.SKY_RESTORE.get(), SoundSource.AMBIENT, rift, 1.0f);
+            default -> {
+            }
         }
     }
 
-    /** The sky is everywhere: play without attenuation, scaled by distance to the event. */
-    private SoundInstance playSky(ClientSkyEvent event, SoundEvent sound, SoundSource source) {
+    /**
+     * Plays a scene sound. With a position it is a real 3D source (attenuation from sounds.json);
+     * without, it is heard everywhere around the event, scaled by the distance to it.
+     */
+    private SoundInstance play(ClientSkyEvent event, SoundEvent sound, SoundSource source, Vec3 at, float volume) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) {
             return null;
         }
-        double d = mc.player.position().distanceTo(new Vec3(event.state.cx(), event.state.cy(), event.state.cz()));
-        float volume = (float) Math.max(0, Math.min(1, 1.25 - d / HEARING_RANGE));
-        if (volume <= 0.01f) {
-            return null;
+        SoundInstance instance;
+        if (at != null) {
+            instance = new SimpleSoundInstance(sound.getLocation(), source, volume, 1.0f,
+                    SoundInstance.createUnseededRandom(), false, 0, SoundInstance.Attenuation.LINEAR, at.x, at.y, at.z, false);
+        } else {
+            double d = distanceTo(event, mc.player.position());
+            float v = (float) Math.max(0, Math.min(1, 1.25 - d / HEARING_RANGE)) * volume;
+            if (v <= 0.01f) {
+                return null;
+            }
+            instance = new SimpleSoundInstance(sound.getLocation(), source, v, 1.0f,
+                    SoundInstance.createUnseededRandom(), false, 0, SoundInstance.Attenuation.NONE, 0, 0, 0, true);
         }
-        SoundInstance instance = new SimpleSoundInstance(sound.getLocation(), source, volume, 1.0f,
-                SoundInstance.createUnseededRandom(), false, 0, SoundInstance.Attenuation.NONE, 0, 0, 0, true);
         mc.getSoundManager().play(instance);
         return instance;
     }
 
     /**
      * Runs at the end of the local player's tick, before its position is sent to the server:
-     * keeps the frozen summoner in place and moves them along the hand's path during the lift.
+     * keeps the frozen target in place and moves them along the hand's path during the lift.
      */
     void onPlayerTick(PlayerTickEvent.Post tick) {
         Minecraft mc = Minecraft.getInstance();
@@ -219,23 +387,21 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
             return;
         }
         for (ClientSkyEvent event : events.values()) {
-            if (event.state.targetEntityId() != player.getId() || !event.state.locked()) {
+            if (event.state.targetEntityId() != player.getId() || event.scene() == null) {
                 continue;
             }
             double t = event.time(0);
-            double r = event.restoreAt();
-            if (t < SkyTimeline.FREEZE || t >= SkyTimeline.TELEPORT || t >= r) {
+            // While the sky cracks the gaze is drawn gently upward, never forced.
+            if (t >= SkyTimeline.CONNECT && t < SkyTimeline.FREEZE && t < event.restoreAt() && player.getXRot() > -14f) {
+                player.setXRot(player.getXRot() - 0.25f);
+                player.xRotO = player.getXRot();
+            }
+            V3 now = event.heldPosition(t);
+            if (now == null) {
                 continue;
             }
-            V3 lock = event.lockLocal();
-            V3 now = HandRig.carried(t, r, lock, event.state.lockYaw());
-            V3 prev = HandRig.carried(t - 1, r, lock, event.state.lockYaw());
-            if (now == null) {
-                now = lock;
-            }
-            if (prev == null) {
-                prev = now;
-            }
+            V3 prev = event.heldPosition(t - 1);
+            if (prev == null) prev = now;
             double cx = event.state.cx(), cy = event.state.cy(), cz = event.state.cz();
             player.setDeltaMovement(Vec3.ZERO);
             player.resetFallDistance();
@@ -248,11 +414,11 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
             player.yOld = player.yo;
             player.zOld = player.zo;
             if (t >= SkyTimeline.HAND - 10) {
-                // Cinematic assist: the summoner's gaze is drawn up towards the descending hand.
+                // Cinematic assist: the target looks up at the hand reaching for them.
                 float pitch = player.getXRot();
-                float target = -58f;
+                float target = t < SkyTimeline.LIFT ? -50f : -70f;
                 player.xRotO = pitch;
-                player.setXRot(pitch + (target - pitch) * 0.12f);
+                player.setXRot(pitch + (target - pitch) * 0.08f);
             }
             if (t >= SkyTimeline.TELEPORT - 22) {
                 ScreenFlash.push((float) SkyTimeline.progress(t, SkyTimeline.TELEPORT - 22, SkyTimeline.TELEPORT - 2));

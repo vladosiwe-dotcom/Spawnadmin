@@ -109,37 +109,105 @@ def horn():
     return normalize(reverb(x, 3.5, 0.45, 5000))
 
 
-def sky_glow():
-    """Rising ethereal swell, the sky lighting up."""
-    dur = 3.5
+def first_crack():
+    """The very first crack: one quiet, dry tick of stressed glass and a faint creak after it."""
+    dur = 2.5
     t = t_axis(dur)
     x = np.zeros_like(t)
-    for f, a in [(220, 0.5), (330, 0.4), (440, 0.35), (660, 0.25), (880, 0.18), (1320, 0.1)]:
-        sweep = f * (1 + 0.06 * t / dur)
-        x += a * np.sin(2 * np.pi * np.cumsum(sweep) / SR) * (0.7 + 0.3 * np.sin(2 * np.pi * (0.5 + f / 1000) * t))
-    air = highpass(rng.standard_normal(len(t)), 4000) * 0.08
-    x = (x + air) * env_adsr(len(t), 2.6, 0.2, 0.9, 0.7)
-    return normalize(reverb(x, 3.0, 0.4))
+    x += ping(t, 3800, 0.05, 0.02, 0.6)
+    x += ping(t, 5200, 0.09, 0.02, 0.25)
+    creak = lowpass(rng.standard_normal(len(t)), 600) * np.exp(-np.abs(t - 0.4) / 0.25) * 0.35
+    x = highpass(x, 1200) + creak
+    return normalize(reverb(x, 2.0, 0.35, 7000), 0.6)
 
 
 def cracking():
-    """Glass cracking: sparse sharp crackles with resonant rings, growing denser."""
-    dur = 5.0
+    """Cracks spreading for ~12 s: sparse ticks at first, denser and louder, deep groans of the dome."""
+    dur = 12.5
     t = t_axis(dur)
     x = np.zeros_like(t)
-    count = 140
+    count = 260
     for i in range(count):
-        s = dur * 0.92 * (i / count) ** 0.7 + rng.uniform(-0.03, 0.03)
+        # slow start, accelerating (matches the crack-front clock)
+        s = dur * 0.95 * (i / count) ** 0.45 + rng.uniform(-0.04, 0.04)
         s = max(0.0, s)
+        loud = 0.15 + 0.85 * (s / dur) ** 1.5
         idx = int(s * SR)
         n = int(0.004 * SR)
         click = rng.standard_normal(n) * np.exp(-np.arange(n) / (0.0008 * SR))
-        x[idx:idx + n] += click[: len(x) - idx] * rng.uniform(0.3, 1.0)
-        x += ping(t, rng.uniform(2500, 7500), s, rng.uniform(0.02, 0.09), rng.uniform(0.05, 0.25))
-    groan = lowpass(rng.standard_normal(len(t)), 120) * 2.5 * np.clip(t / dur, 0, 1)
+        x[idx:idx + n] += click[: len(x) - idx] * rng.uniform(0.3, 1.0) * loud
+        x += ping(t, rng.uniform(2200, 7000), s, 0.03, rng.uniform(0.05, 0.22) * loud)
+    groan = lowpass(rng.standard_normal(len(t)), 90) * 3.0 * np.clip(t / dur, 0, 1) ** 2
     x = highpass(x, 900) + groan
-    x *= env_adsr(len(t), 0.01, 0.1, 1.0, 0.4)
-    return normalize(reverb(x, 2.2, 0.3, 9000))
+    x *= env_adsr(len(t), 0.01, 0.1, 1.0, 0.5)
+    return normalize(reverb(x, 2.4, 0.3, 9000))
+
+
+def rift_open():
+    """The sky opening: a vast, slow sub-bass swell with a breathing, airy roar."""
+    dur = 7.0
+    t = t_axis(dur)
+    sub = (np.sin(2 * np.pi * 36 * t) * 0.8 + np.sin(2 * np.pi * 54.3 * t) * 0.4) * env_adsr(len(t), 2.0, 1.0, 0.9, 2.5)
+    air = lowpass(rng.standard_normal(len(t)), 700) * env_adsr(len(t), 3.0, 0.5, 0.8, 2.5) * 0.7
+    air *= 0.7 + 0.3 * np.sin(2 * np.pi * 0.35 * t)
+    return normalize(reverb(sub + air, 4.0, 0.45, 2500))
+
+
+def hand_appear():
+    """Something enormous approaching: a powerful low swell with a dark, wide hum."""
+    dur = 5.5
+    t = t_axis(dur)
+    f = 41.2 * (1 + 0.04 * t / dur)
+    body = np.sin(2 * np.pi * np.cumsum(f) / SR) + 0.5 * np.sin(2 * np.pi * np.cumsum(f * 1.5) / SR)
+    body = np.tanh(body * 1.4) * env_adsr(len(t), 2.5, 0.6, 0.85, 2.0)
+    rumble = lowpass(rng.standard_normal(len(t)), 160) * env_adsr(len(t), 3.0, 0.5, 0.8, 1.8) * 1.6
+    return normalize(reverb(body + rumble, 3.5, 0.4, 2000))
+
+
+def grab_close():
+    """Giant fingers snapping shut, then the heavy thud of the grip."""
+    dur = 3.0
+    t = t_axis(dur)
+    x = np.zeros_like(t)
+    for k, s in enumerate((0.0, 0.1, 0.2, 0.3, 0.45)):  # fingers, one after another
+        tt = t - s
+        on = tt >= 0
+        whoosh = np.zeros_like(t)
+        whoosh[on] = rng.standard_normal(on.sum()) * np.exp(-tt[on] / 0.08)
+        x += lowpass(whoosh, 1200) * 0.5
+    tt = t - 0.8
+    on = tt >= 0
+    thud = np.zeros_like(t)
+    thud[on] = (np.sin(2 * np.pi * 48 * tt[on] * (1 - 0.25 * tt[on])) * np.exp(-tt[on] / 0.45) * 1.6
+                + lowpass(rng.standard_normal(on.sum()), 400) * np.exp(-tt[on] / 0.1))
+    return normalize(reverb(x + thud, 2.5, 0.35, 3000))
+
+
+def lift_wind():
+    """Pulled up into the sky: rising, rushing air."""
+    dur = 3.4
+    t = t_axis(dur)
+    noise = rng.standard_normal(len(t))
+    cut = 200 + 5000 * (t / dur) ** 2
+    out = np.zeros_like(t)
+    acc = 0.0
+    for i in range(len(t)):
+        acc += (1 - np.exp(-2 * np.pi * cut[i] / SR)) * (noise[i] - acc)
+        out[i] = acc
+    out *= (0.2 + 0.8 * (t / dur) ** 1.4) * env_adsr(len(t), 0.2, 0.1, 1.0, 0.25)
+    return normalize(reverb(out, 1.5, 0.2, 9000))
+
+
+def vanish_flash():
+    """Gone into the light: a bright, wide swell that blooms and fades. No bells."""
+    dur = 4.0
+    t = t_axis(dur)
+    x = np.zeros_like(t)
+    for f in (146.8, 220.0, 293.7, 440.0, 587.3):
+        x += np.sin(2 * np.pi * f * t + rng.uniform(0, 6)) * (0.6 if f < 300 else 0.25)
+    x *= np.exp(-np.clip(t - 0.15, 0, None) / 1.2) * np.clip(t / 0.15, 0, 1)
+    air = highpass(rng.standard_normal(len(t)), 3000) * np.exp(-t / 0.6) * 0.3
+    return normalize(reverb(x + air, 3.5, 0.5, 6000))
 
 
 def shatter():
@@ -177,22 +245,6 @@ def time_stop():
     return normalize(reverb(x, 2.5, 0.35))
 
 
-def hand_appear():
-    """Deep celestial choir swell as the hand of light emerges."""
-    dur = 4.5
-    t = t_axis(dur)
-    x = np.zeros_like(t)
-    chord = [130.81, 196.0, 261.63, 329.63, 392.0, 523.25]
-    for f in chord:
-        for d in (0.996, 1.0, 1.004):
-            ph = rng.uniform(0, 2 * np.pi)
-            x += np.sin(2 * np.pi * f * d * t + ph) * (0.6 + 0.4 * np.sin(2 * np.pi * 5.2 * t + ph))
-    formant = lowpass(x, 1800)
-    sub = np.sin(2 * np.pi * 65.4 * t) * 0.8
-    x = (formant * 0.25 + sub) * env_adsr(len(t), 1.8, 0.4, 0.85, 1.6)
-    return normalize(reverb(x, 4.0, 0.5, 4000))
-
-
 def grab_teleport():
     """Rising whoosh into a low swell and a white-out (no chime)."""
     dur = 3.0
@@ -216,25 +268,29 @@ def grab_teleport():
 
 def restore():
     """The shattered sky reassembling: reversed tinkles converging into a soft chord."""
-    dur = 6.5
+    dur = 10.0
     t = t_axis(dur)
     x = np.zeros_like(t)
-    for _ in range(160):
-        s = rng.uniform(0.2, 5.2)
+    for _ in range(200):
+        s = rng.uniform(0.2, 8.0)
         x += ping(t, rng.uniform(1500, 7000), s, rng.uniform(0.05, 0.3), rng.uniform(0.04, 0.16))
     rev = x[::-1].copy()
     pad = np.zeros_like(t)
     for f in (130.81, 164.81, 196.0, 261.63):
         pad += np.sin(2 * np.pi * f * t) * 0.25
-    pad *= env_adsr(len(t), 3.5, 0.5, 0.8, 2.2)
+    pad *= env_adsr(len(t), 5.0, 0.5, 0.8, 3.0)
     x = rev * env_adsr(len(t), 0.5, 0.2, 1.0, 1.0) + pad
     return normalize(reverb(x, 3.0, 0.4))
 
 
 SOUNDS = {
     "heaven_horn": horn,
-    "sky_glow": sky_glow,
+    "first_crack": first_crack,
     "sky_crack": cracking,
+    "rift_open": rift_open,
+    "grab_close": grab_close,
+    "lift_wind": lift_wind,
+    "vanish_flash": vanish_flash,
     "sky_shatter": shatter,
     "time_stop": time_stop,
     "hand_appear": hand_appear,

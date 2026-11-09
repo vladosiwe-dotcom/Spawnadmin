@@ -75,7 +75,9 @@ dependencies {
 }
 
 tasks.named('test', Test) {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags 'probe'
+    }
     testLogging {
         events 'passed', 'failed'
         exceptionFormat 'full'

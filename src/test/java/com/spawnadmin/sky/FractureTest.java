@@ -119,6 +119,56 @@ class FractureTest {
     }
 
     @Test
+    void cracksAppearGraduallyFromOneBarelyVisibleCrack() {
+        SkyScene scene = new SkyScene(Fracture.generate(20261108L));
+        double r = SkyTimeline.RESTORE;
+        int[] visible = new int[4];
+        int[] ticks = {10, SkyTimeline.SPREAD, SkyTimeline.CONNECT, SkyTimeline.CHIPS};
+        for (int k = 0; k < ticks.length; k++) {
+            double front = scene.crackFront(ticks[k], r);
+            for (CrackSegment c : scene.fracture.cracks) {
+                double[] range = c.visibleRange(front);
+                double len = 0;
+                for (int i = 0; i + 1 < range.length; i += 2) len += range[i + 1] - range[i];
+                if (len > 1e-6) visible[k]++;
+            }
+        }
+        int total = scene.fracture.cracks.size();
+        assertTrue(visible[0] >= 1 && visible[0] < total * 0.02, "first: a single small crack, " + visible[0]);
+        assertTrue(visible[1] > visible[0] && visible[1] < total * 0.15, "then thin branches, " + visible[1]);
+        assertTrue(visible[2] > visible[1] && visible[2] < total * 0.9, "then they join up, " + visible[2]);
+        assertTrue(visible[3] > total * 0.95, "finally the whole dome is cracked, " + visible[3]);
+        assertTrue(scene.fracture.origins.size() >= 3, "new cracks start in other places too");
+        // A fresh crack is a hair-thin line; old cracks are wide.
+        CrackSegment first = scene.fracture.cracks.stream().min((a, b) -> Double.compare(Math.min(a.da(), a.db()), Math.min(b.da(), b.db()))).orElseThrow();
+        double early = scene.crackWidth(first, scene.crackFront(15, r), 15);
+        double late = scene.crackWidth(first, scene.crackFront(SkyTimeline.FALL, r), SkyTimeline.FALL);
+        assertTrue(early < 0.4 * late, "cracks widen and deepen: " + early + " -> " + late);
+    }
+
+    @Test
+    void chipsAndFirstFragmentsBreakAwayBeforeTheCollapse() {
+        SkyScene scene = new SkyScene(Fracture.generate(20261108L));
+        double r = SkyTimeline.RESTORE;
+        SkyScene.ShardPose p = new SkyScene.ShardPose();
+        long chipsFlying = scene.fracture.debris.stream().filter(d -> d.isChip()).filter(d -> {
+            scene.debrisPose(d, SkyTimeline.FRAGMENTS + 10, r, p);
+            return p.alpha > 0.1;
+        }).count();
+        long earlyShards = scene.fracture.shards.stream().filter(s -> {
+            scene.shardPose(s, SkyTimeline.FALL - 1, r, p);
+            return p.free > 0.5;
+        }).count();
+        long beforeChips = scene.fracture.debris.stream().filter(d -> d.isChip()).filter(d -> {
+            scene.debrisPose(d, SkyTimeline.CHIPS - 20, r, p);
+            return p.alpha > 0.01;
+        }).count();
+        assertEquals(0, beforeChips, "nothing breaks off while the cracks are still growing");
+        assertTrue(chipsFlying > 10, "chips pop out of the cracks: " + chipsFlying);
+        assertTrue(earlyShards >= 1 && earlyShards < 25, "a few single fragments go first: " + earlyShards);
+    }
+
+    @Test
     void adjacencyIsSymmetric() {
         Fracture f = Fracture.generate(5L);
         for (int i = 0; i < f.neighbours.length; i++) {

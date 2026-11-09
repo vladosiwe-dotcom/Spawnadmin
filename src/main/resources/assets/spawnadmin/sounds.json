@@ -8,21 +8,12 @@
       }
     ]
   },
-  "sky_glow": {
-    "subtitle": "subtitles.spawnadmin.sky_glow",
-    "sounds": [
-      {
-        "name": "spawnadmin:sky_glow",
-        "attenuation_distance": 256
-      }
-    ]
-  },
   "sky_crack": {
     "subtitle": "subtitles.spawnadmin.sky_crack",
     "sounds": [
       {
         "name": "spawnadmin:sky_crack",
-        "attenuation_distance": 256
+        "attenuation_distance": 320
       }
     ]
   },
@@ -31,7 +22,7 @@
     "sounds": [
       {
         "name": "spawnadmin:sky_shatter",
-        "attenuation_distance": 256
+        "attenuation_distance": 320
       }
     ]
   },
@@ -49,7 +40,7 @@
     "sounds": [
       {
         "name": "spawnadmin:hand_appear",
-        "attenuation_distance": 256
+        "attenuation_distance": 320
       }
     ]
   },
@@ -67,7 +58,7 @@
     "sounds": [
       {
         "name": "spawnadmin:sky_restore",
-        "attenuation_distance": 256
+        "attenuation_distance": 320
       }
     ]
   },
@@ -120,6 +111,51 @@
       {
         "name": "spawnadmin:music_admin_realm",
         "stream": true
+      }
+    ]
+  },
+  "first_crack": {
+    "subtitle": "subtitles.spawnadmin.first_crack",
+    "sounds": [
+      {
+        "name": "spawnadmin:first_crack",
+        "attenuation_distance": 160
+      }
+    ]
+  },
+  "rift_open": {
+    "subtitle": "subtitles.spawnadmin.rift_open",
+    "sounds": [
+      {
+        "name": "spawnadmin:rift_open",
+        "attenuation_distance": 320
+      }
+    ]
+  },
+  "grab_close": {
+    "subtitle": "subtitles.spawnadmin.grab_close",
+    "sounds": [
+      {
+        "name": "spawnadmin:grab_close",
+        "attenuation_distance": 96
+      }
+    ]
+  },
+  "lift_wind": {
+    "subtitle": "subtitles.spawnadmin.lift_wind",
+    "sounds": [
+      {
+        "name": "spawnadmin:lift_wind",
+        "attenuation_distance": 96
+      }
+    ]
+  },
+  "vanish_flash": {
+    "subtitle": "subtitles.spawnadmin.vanish_flash",
+    "sounds": [
+      {
+        "name": "spawnadmin:vanish_flash",
+        "attenuation_distance": 320
       }
     ]
   }

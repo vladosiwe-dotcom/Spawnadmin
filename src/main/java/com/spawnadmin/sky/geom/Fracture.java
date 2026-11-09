@@ -31,6 +31,12 @@ import java.util.SplittableRandom;
 public final class Fracture {
     public static final int TARGET_CELLS = 95;
     public static final int MAX_SHARDS = 520;
+    /** Disc radius of the first impact: about 32 degrees above the horizon, in the target's view. */
+    public static final double IMPACT_RADIUS = 0.66;
+    /** Real-time progress (fraction of the crack growth) at which the secondary cracks start. */
+    private static final double[] SECONDARY_STARTS = {0.17, 0.27, 0.38, 0.5};
+    /** Exponent of the crack-front clock: slow, hesitant start, accelerating spread. */
+    public static final double FRONT_EXPONENT = 2.2;
     private static final int RIM_SEGMENTS = 96;
 
     public final long seed;
@@ -44,9 +50,11 @@ public final class Fracture {
     public final double maxFront;
     /** Shard adjacency: neighbours[i] lists shards sharing an edge with shard i. */
     public final int[][] neighbours;
+    /** Where cracks start: the impact first, then the secondary origins in order of appearance. */
+    public final List<V2> origins;
 
     private Fracture(long seed, V2 impact, double openRadius, List<ShardData> shards, List<DebrisData> debris,
-                     List<CrackSegment> cracks, double maxFront, int[][] neighbours) {
+                     List<CrackSegment> cracks, double maxFront, int[][] neighbours, List<V2> origins) {
         this.seed = seed;
         this.impact = impact;
         this.openRadius = openRadius;
@@ -55,14 +63,17 @@ public final class Fracture {
         this.cracks = cracks;
         this.maxFront = maxFront;
         this.neighbours = neighbours;
+        this.origins = origins;
     }
 
     // ================================================================== generation
 
     public static Fracture generate(long seed) {
         SplittableRandom rnd = new SplittableRandom(seed);
-        double ia = rnd.nextDouble() * Math.PI * 2;
-        double ir = 0.04 + rnd.nextDouble() * 0.12;
+        // The first crack strikes in front of the target (disc +u; the renderer turns the dome to
+        // the target's yaw), high enough to be above the horizon, low enough to be in view.
+        double ia = (rnd.nextDouble() - 0.5) * 0.35;
+        double ir = IMPACT_RADIUS + (rnd.nextDouble() - 0.5) * 0.06;
         V2 impact = new V2(ir * StrictMath.cos(ia), ir * StrictMath.sin(ia));
         double openRadius = 0.5 + rnd.nextDouble() * 0.08;
 
@@ -145,12 +156,35 @@ public final class Fracture {
             adj.get(ed[0]).add(new int[]{ed[1], e});
             adj.get(ed[1]).add(new int[]{ed[0], e});
         }
-        double[] dist = dijkstra(nodes, adj, weight, impact);
+        double[] dist = dijkstra(nodes, adj, weight, impact, new int[0], new double[0]);
+        double mainMax = 0;
+        for (double d : dist) {
+            if (d < Double.MAX_VALUE) mainMax = Math.max(mainMax, d);
+        }
+        // Secondary cracks: new small cracks appear elsewhere while the first one is still growing,
+        // then the fronts meet. A secondary origin started at real-time fraction p is a source whose
+        // front value is mainMax * p^FRONT_EXPONENT (the same clock the renderer uses).
+        List<V2> origins = new ArrayList<>();
+        origins.add(impact);
+        int[] sources = new int[SECONDARY_STARTS.length];
+        double[] starts = new double[SECONDARY_STARTS.length];
+        for (int k = 0; k < SECONDARY_STARTS.length; k++) {
+            V2 site = null;
+            for (int tries = 0; tries < 40 && site == null; tries++) {
+                double a = rnd.nextDouble() * Math.PI * 2, r = 0.25 + rnd.nextDouble() * 0.6;
+                V2 c = impact.add(new V2(r * StrictMath.cos(a), r * StrictMath.sin(a)));
+                if (c.length() < 0.88) site = c;
+            }
+            if (site == null) site = impact.mul(0.5);
+            int best = nearestNode(nodes, adj, site);
+            sources[k] = best;
+            starts[k] = mainMax * Math.pow(SECONDARY_STARTS[k], FRONT_EXPONENT);
+            origins.add(nodes.get(best));
+        }
+        dist = dijkstra(nodes, adj, weight, impact, sources, starts);
         double maxFront = 0;
         for (double d : dist) {
-            if (d < Double.MAX_VALUE) {
-                maxFront = Math.max(maxFront, d);
-            }
+            if (d < Double.MAX_VALUE) maxFront = Math.max(maxFront, d);
         }
 
         List<CrackSegment> cracks = new ArrayList<>();
@@ -161,7 +195,7 @@ public final class Fracture {
             double da = dist[ed[0]] == Double.MAX_VALUE ? maxFront : dist[ed[0]];
             double db = dist[ed[1]] == Double.MAX_VALUE ? maxFront : dist[ed[1]];
             V2 mid = a.lerp(b, 0.5);
-            double width = 0.18 + 0.5 * Math.exp(-mid.dist(impact) / 0.2);
+            double width = 0.16 + 0.45 * Math.exp(-mid.dist(impact) / 0.2) + 0.08 * rnd.nextDouble();
             cracks.add(new CrackSegment(a, b, da, db, weight[e], ed[2], ed[3], false, width));
         }
 
@@ -175,6 +209,7 @@ public final class Fracture {
         // 5. shards and debris
         List<ShardData> shards = new ArrayList<>();
         List<DebrisData> debris = new ArrayList<>();
+        // The few smallest pieces right at the impact break away first, before the collapse.
         int[][] neighbours = new int[mesh.polys.size()][];
         for (int p = 0; p < mesh.polys.size(); p++) {
             int[] poly = mesh.polys.get(p);
@@ -182,15 +217,16 @@ public final class Fracture {
             for (int k = 0; k < poly.length; k++) {
                 outline[k] = nodes.get(poly[k]);
             }
-            ShardData shard = buildShard(rnd, p, outline, impact, openRadius);
+            ShardData shard = buildShard(rnd, p, outline, impact, openRadius, isEarly(outline, impact) && rnd.nextDouble() < 0.1);
             shards.add(shard);
             neighbours[p] = nb.get(p).stream().distinct().mapToInt(Integer::intValue).toArray();
             if (shard.detaches) {
                 addDebris(rnd, shard, debris);
             }
         }
+        addChips(rnd, nodes, adj, dist, maxFront, shards, debris);
         return new Fracture(seed, impact, openRadius, List.copyOf(shards), List.copyOf(debris), List.copyOf(cracks),
-                maxFront, neighbours);
+                maxFront, neighbours, List.copyOf(origins));
     }
 
     private static double gaussian(SplittableRandom rnd) {
@@ -424,7 +460,7 @@ public final class Fracture {
         boolean split(int pi, V2 p, V2 n, double minFraction) {
             int[] poly = polys.get(pi);
             int m = poly.length;
-            double eps = 1e-12;
+            double eps = 1e-6; // vertices this close to the cut lie on it: no micro edges
             int[] side = new int[m];
             double[] f = new double[m];
             boolean neg = false, pos = false;
@@ -520,18 +556,42 @@ public final class Fracture {
 
     // ------------------------------------------------------------------ crack front
 
-    private static double[] dijkstra(List<V2> nodes, List<List<int[]>> adj, double[] weight, V2 impact) {
+    private static int nearestNode(List<V2> nodes, List<List<int[]>> adj, V2 p) {
+        int best = -1;
+        for (int i = 0; i < nodes.size(); i++) {
+            if (!adj.get(i).isEmpty() && (best < 0 || nodes.get(i).dist(p) < nodes.get(best).dist(p))) {
+                best = i;
+            }
+        }
+        return best;
+    }
+
+    private static double[] dijkstra(List<V2> nodes, List<List<int[]>> adj, double[] weight, V2 impact,
+                                     int[] extraSources, double[] extraStarts) {
         double[] dist = new double[nodes.size()];
         Arrays.fill(dist, Double.MAX_VALUE);
         PriorityQueue<double[]> queue = new PriorityQueue<>((p, q) -> Double.compare(p[0], q[0]));
-        for (int i = 0; i < nodes.size(); i++) {
-            double d = nodes.get(i).dist(impact);
-            if (d < 0.05 && !adj.get(i).isEmpty()) {
-                dist[i] = d;
-                queue.add(new double[]{d, i});
+        for (int k = 0; k < extraSources.length; k++) {
+            if (extraSources[k] >= 0 && extraStarts[k] < dist[extraSources[k]]) {
+                dist[extraSources[k]] = extraStarts[k];
+                queue.add(new double[]{extraStarts[k], extraSources[k]});
             }
         }
-        if (queue.isEmpty()) {
+        boolean seeded = false;
+        double nearest = Double.MAX_VALUE;
+        for (int i = 0; i < nodes.size(); i++) {
+            if (!adj.get(i).isEmpty()) nearest = Math.min(nearest, nodes.get(i).dist(impact));
+        }
+        for (int i = 0; i < nodes.size(); i++) {
+            // The crack starts exactly at the impact: its nearest junction is reached at front 0.
+            double d = nodes.get(i).dist(impact) - nearest;
+            if (d < 0.03 && !adj.get(i).isEmpty() && d < dist[i]) {
+                dist[i] = d;
+                queue.add(new double[]{d, i});
+                seeded = true;
+            }
+        }
+        if (!seeded) {
             int best = -1;
             for (int i = 0; i < nodes.size(); i++) {
                 if (!adj.get(i).isEmpty() && (best < 0 || nodes.get(i).dist(impact) < nodes.get(best).dist(impact))) {
@@ -623,7 +683,15 @@ public final class Fracture {
 
     // ------------------------------------------------------------------ shards
 
-    private static ShardData buildShard(SplittableRandom rnd, int index, V2[] outline, V2 impact, double openRadius) {
+    private static boolean isEarly(V2[] outline, V2 impact) {
+        V2 c = polygonCentroid(outline);
+        double area = 0;
+        for (int i = 0; i < outline.length; i++) area += outline[i].cross(outline[(i + 1) % outline.length]);
+        return c.dist(impact) < 0.09 && area * 0.5 < 0.0012;
+    }
+
+    private static ShardData buildShard(SplittableRandom rnd, int index, V2[] outline, V2 impact, double openRadius,
+                                        boolean early) {
         V2 centroid = polygonCentroid(outline);
         V3 origin = DomeShape.pointAt(centroid, 0);
         V3 normal = DomeShape.normalAt(centroid.x(), centroid.y());
@@ -641,23 +709,26 @@ public final class Fracture {
         boolean detaches = d + jitter < openRadius;
         double outerness = Math.min(1.0, d / openRadius);
         boolean hovers = detaches && rnd.nextDouble() < 0.18 + 0.3 * outerness;
-        // Breaking spreads outward over ~4 s of the 6 s fall.
-        double detachDelay = 0.1 + outerness * 3.2 + rnd.nextDouble() * 0.5;
+        // Breaking spreads outward over ~4 s of the 6 s fall; the first fragments go before it.
+        double detachDelay = early ? -1.5 + rnd.nextDouble() * 1.2 : 0.1 + outerness * 3.2 + rnd.nextDouble() * 0.5;
 
         V3 inward = normal.mul(-1);
-        V3 tangent = normal.anyPerpendicular();
-        V3 bitangent = normal.cross(tangent);
-        double ta = rnd.nextDouble() * Math.PI * 2;
-        V3 lateral = tangent.mul(Math.cos(ta)).add(bitangent.mul(Math.sin(ta)));
-        V3 velocity = inward.mul(1.5 + rnd.nextDouble() * 3.5).add(lateral.mul(rnd.nextDouble() * 2.5));
+        // Shards obey the opening: pushed outward from the rift's centre along the dome.
+        V2 radial2 = centroid.sub(impact).normalize();
+        V3 outward = DomeShape.pointAt(centroid.add(radial2.mul(0.01)), 0).sub(origin).normalize();
+        V3 side = normal.cross(outward).normalize();
+        V3 lateral = outward.add(side.mul((rnd.nextDouble() - 0.5) * 0.6)).normalize();
+        V3 velocity = inward.mul(1.2 + rnd.nextDouble() * 2.5).add(lateral.mul((2.0 + rnd.nextDouble() * 3.5) * (1.1 - 0.5 * outerness)));
         V3 spinAxis = lateral.add(normal.mul(rnd.nextDouble() - 0.5))
                 .add(new V3(rnd.nextDouble() - 0.5, rnd.nextDouble() - 0.5, rnd.nextDouble() - 0.5).mul(0.8)).normalize();
         double spinSpeed = (0.4 + rnd.nextDouble() * 1.8) * (rnd.nextBoolean() ? 1 : -1);
-        V3 hoverOffset = inward.mul(5 + rnd.nextDouble() * 18).add(lateral.mul(rnd.nextDouble() * 7));
+        V3 hoverOffset = inward.mul(4 + rnd.nextDouble() * 12).add(lateral.mul(6 + rnd.nextDouble() * 14));
         double hoverTilt = (0.35 + rnd.nextDouble() * 1.2) * (rnd.nextBoolean() ? 1 : -1);
 
-        double restoreStart = 0.04 + 0.42 * (1.0 - outerness) + rnd.nextDouble() * 0.06;
-        double restoreLength = 0.36 + rnd.nextDouble() * 0.08;
+        // Restore: the rift contracts first (0..0.12), then large shards fly home, outer ones first,
+        // so the opening closes like an iris; small fragments follow last.
+        double restoreStart = 0.1 + 0.34 * (1.0 - outerness) + rnd.nextDouble() * 0.05;
+        double restoreLength = 0.28 + rnd.nextDouble() * 0.06;
         return new ShardData(index, outline, centroid, origin, normal, outer, inner, d, detaches, hovers,
                 detachDelay, velocity, spinAxis, spinSpeed, hoverOffset, hoverTilt, restoreStart, restoreLength,
                 rnd.nextDouble(), thickness);
@@ -687,10 +758,62 @@ public final class Fracture {
             V3 axis = new V3(rnd.nextDouble() - 0.5, rnd.nextDouble() - 0.5, rnd.nextDouble() - 0.5).normalize();
             double spin = (3 + rnd.nextDouble() * 7) * (rnd.nextBoolean() ? 1 : -1);
             double delay = Math.max(0, s.detachDelay - 0.05 + rnd.nextDouble() * 0.15);
-            double rs = Math.max(0, s.restoreStart - 0.05 * rnd.nextDouble());
+            double rs = Math.min(0.74, s.restoreStart + s.restoreLength * 0.75 + 0.04 * rnd.nextDouble());
             out.add(new DebrisData(s.index, origin, disc, tri, normal, delay, velocity, axis, spin, rs,
-                    s.restoreLength * (0.8 + 0.2 * rnd.nextDouble())));
+                    0.14 + 0.04 * rnd.nextDouble(), Double.NaN));
         }
+    }
+
+    /**
+     * Chips: small flakes that pop out of crack junctions in the CHIPS stage, before anything big
+     * breaks. They use the event clock (seconds), freeze with time and return last.
+     */
+    private static void addChips(SplittableRandom rnd, List<V2> nodes, List<List<int[]>> adj, double[] dist,
+                                 double maxFront, List<ShardData> shards, List<DebrisData> out) {
+        List<Integer> junctions = new ArrayList<>();
+        for (int i = 0; i < nodes.size(); i++) {
+            if (adj.get(i).size() >= 3 && nodes.get(i).length() < 0.9) junctions.add(i);
+        }
+        int count = Math.min(90, junctions.size());
+        for (int n = 0; n < count; n++) {
+            int node = junctions.get(rnd.nextInt(junctions.size()));
+            V2 disc = nodes.get(node).add(new V2((rnd.nextDouble() - 0.5) * 0.01, (rnd.nextDouble() - 0.5) * 0.01));
+            V3 origin = DomeShape.pointAt(disc, -0.1);
+            V3 normal = DomeShape.normalAt(disc.x(), disc.y());
+            V3 t = normal.anyPerpendicular();
+            V3 b = normal.cross(t);
+            double size = 0.12 + rnd.nextDouble() * 0.35;
+            V3[] tri = new V3[3];
+            double a0 = rnd.nextDouble() * Math.PI * 2;
+            for (int c = 0; c < 3; c++) {
+                double a = a0 + c * 2.1 + (rnd.nextDouble() - 0.5) * 0.8;
+                double r = size * (0.5 + rnd.nextDouble() * 0.7) * (c == 0 ? 1.6 : 1.0);
+                tri[c] = t.mul(Math.cos(a) * r).add(b.mul(Math.sin(a) * r));
+            }
+            V3 velocity = normal.mul(-(0.5 + rnd.nextDouble() * 1.5))
+                    .add(t.mul((rnd.nextDouble() - 0.5) * 1.5)).add(b.mul((rnd.nextDouble() - 0.5) * 1.5));
+            V3 axis = new V3(rnd.nextDouble() - 0.5, rnd.nextDouble() - 0.5, rnd.nextDouble() - 0.5).normalize();
+            double spin = (2 + rnd.nextDouble() * 6) * (rnd.nextBoolean() ? 1 : -1);
+            // Event seconds: chips pop in the CHIPS..FALL window, sooner where the cracks are older.
+            double age = dist[node] == Double.MAX_VALUE ? 1 : dist[node] / Math.max(maxFront, 1e-9);
+            double chipTime = 12.0 + age * 2.4 + rnd.nextDouble() * 0.6;
+            int owner = nearestShard(shards, disc);
+            out.add(new DebrisData(owner, origin, disc, tri, normal, 0, velocity, axis, spin,
+                    0.7 + rnd.nextDouble() * 0.08, 0.12, chipTime));
+        }
+    }
+
+    private static int nearestShard(List<ShardData> shards, V2 p) {
+        int best = 0;
+        double bd = Double.MAX_VALUE;
+        for (ShardData s : shards) {
+            double d = s.centroid2.dist(p);
+            if (d < bd) {
+                bd = d;
+                best = s.index;
+            }
+        }
+        return best;
     }
 
     static V2 polygonCentroid(V2[] poly) {

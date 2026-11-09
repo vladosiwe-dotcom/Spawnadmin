@@ -14,6 +14,7 @@ public final class ModShaders {
     public static ShaderInstance rift;
     public static ShaderInstance hand;
     public static ShaderInstance timeStop;
+    public static ShaderInstance beam;
 
     private ModShaders() {
     }
@@ -26,9 +27,10 @@ public final class ModShaders {
         event.registerShader(new ShaderInstance(rp, SpawnAdmin.id("sky_rift"), world), s -> rift = s);
         event.registerShader(new ShaderInstance(rp, SpawnAdmin.id("sky_hand"), world), s -> hand = s);
         event.registerShader(new ShaderInstance(rp, SpawnAdmin.id("sky_timestop"), DefaultVertexFormat.POSITION_TEX), s -> timeStop = s);
+        event.registerShader(new ShaderInstance(rp, SpawnAdmin.id("sky_beam"), world), s -> beam = s);
     }
 
     static boolean ready() {
-        return glass != null && crack != null && rift != null && hand != null && timeStop != null;
+        return glass != null && crack != null && rift != null && hand != null && timeStop != null && beam != null;
     }
 }

@@ -24,6 +24,8 @@ final class ServerSkyEvent {
     boolean teleported;
     boolean aborted;
     boolean grantedFlight;
+    float startYaw;
+    SkyTimeline.Phase lastPhase = SkyTimeline.Phase.FIRST_CRACK;
 
     ServerSkyEvent(int id, ServerLevel level, long seed, Vec3 center, UUID target, int targetEntityId, long startTick) {
         this.id = id;
@@ -46,6 +48,6 @@ final class ServerSkyEvent {
     SkyEventSyncPayload toPayload() {
         Vec3 l = lockPos == null ? Vec3.ZERO : lockPos;
         return new SkyEventSyncPayload(id, seed, center.x, center.y, center.z, targetEntityId, startTick, restoreAt,
-                lockPos != null, l.x, l.y, l.z, lockYaw);
+                lockPos != null, l.x, l.y, l.z, lockYaw, startYaw);
     }
 }

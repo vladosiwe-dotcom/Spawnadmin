@@ -10,6 +10,9 @@ import net.minecraft.sounds.Music;
 import net.neoforged.neoforge.client.event.SelectMusicEvent;
 import net.neoforged.neoforge.client.event.RenderGuiLayerEvent;
 import net.neoforged.neoforge.client.event.RenderHandEvent;
+import net.neoforged.neoforge.client.event.RenderPlayerEvent;
+import net.neoforged.neoforge.client.event.ViewportEvent;
+import net.neoforged.neoforge.event.tick.EntityTickEvent;
 import net.minecraft.client.renderer.item.ItemProperties;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
@@ -56,7 +59,44 @@ public final class SpawnAdminClient {
                 e.setCanceled(true);
             }
         });
+        // Camera: subtle shake by stage, the impact of the grip, a lean as the hand looms.
+        bus.addListener((ViewportEvent.ComputeCameraAngles e) -> {
+            float[] shake = ClientSkyEvents.INSTANCE.cameraShake((float) e.getPartialTick());
+            if (shake != null) {
+                e.setPitch(e.getPitch() + shake[0]);
+                e.setYaw(e.getYaw() + shake[1]);
+                e.setRoll(e.getRoll() + shake[2]);
+            }
+        });
+        // Acceleration while being pulled up.
+        bus.addListener((ViewportEvent.ComputeFov e) ->
+                e.setFOV(e.getFOV() * ClientSkyEvents.INSTANCE.fovMultiplier((float) e.getPartialTick())));
+        // The carried body dissolves into the light right before it vanishes.
+        bus.addListener((RenderPlayerEvent.Pre e) -> {
+            float scale = ClientSkyEvents.INSTANCE.vanishScale(e.getEntity(), e.getPartialTick());
+            if (scale < 0.999f) {
+                e.getPoseStack().pushPose();
+                e.getPoseStack().translate(0, 0.9, 0);
+                e.getPoseStack().scale(scale, scale, scale);
+                e.getPoseStack().translate(0, -0.9, 0);
+                SCALED.add(e.getEntity().getId());
+            }
+        });
+        bus.addListener((RenderPlayerEvent.Post e) -> {
+            if (SCALED.remove(e.getEntity().getId())) {
+                e.getPoseStack().popPose();
+            }
+        });
+        // Local time stop on this client too: mobs and items near the scene stop animating.
+        bus.addListener((EntityTickEvent.Pre e) -> {
+            if (e.getEntity().level().isClientSide() && !(e.getEntity() instanceof net.minecraft.world.entity.player.Player)
+                    && !ClientSkyEvents.INSTANCE.all().isEmpty() && ClientSkyEvents.INSTANCE.isFrozenAt(e.getEntity().position())) {
+                e.setCanceled(true);
+            }
+        });
     }
+
+    private static final java.util.Set<Integer> SCALED = new java.util.HashSet<>();
 
     /** Quiet piano in the realm (even in creative mode); silence while the sky score plays. */
     private static final Music REALM_MUSIC = new Music(ModSounds.MUSIC_ADMIN_REALM, 200, 600, true);

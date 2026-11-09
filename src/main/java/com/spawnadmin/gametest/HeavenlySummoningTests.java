@@ -27,7 +27,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 @GameTestHolder(SpawnAdmin.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class HeavenlySummoningTests {
-    private static final int HIDDEN = 20 * 15;
+    private static final int HIDDEN = 20 * 10;
 
     private HeavenlySummoningTests() {
     }
@@ -37,7 +37,13 @@ public final class HeavenlySummoningTests {
      * such as the administrator's realm are missing there (a normal server loads them). Fall back
      * to the Nether so the carry-away and return logic is still exercised end to end.
      */
+    /** Tests run in parallel in one level: lift the per-dimension event limit for them. */
+    private static void allowParallel() {
+        SpawnAdminConfig.MAX_EVENTS_PER_DIMENSION.set(16);
+    }
+
     private static void ensureRealm(GameTestHelper helper) {
+        allowParallel();
         if (AdminRealm.realmLevel(helper.getLevel().getServer()) == null) {
             SpawnAdminConfig.TARGET_DIMENSION.set("minecraft:the_nether");
         }
@@ -45,8 +51,10 @@ public final class HeavenlySummoningTests {
 
     @GameTest(template = "empty", timeoutTicks = HIDDEN + 120)
     public static void hornWaitsSilentlyThenStartsAndCoolsDown(GameTestHelper helper) {
+        allowParallel();
         ServerPlayer player = helper.makeMockServerPlayerInLevel();
-        player.moveTo(helper.absoluteVec(new Vec3(2.5, 2, 2.5)));
+        Vec3 at = helper.absoluteVec(new Vec3(2.5, 2, 2.5));
+        player.moveTo(at.x, at.y, at.z, 0f, -90f); // looking straight up: nobody else is targeted
         player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(ModItems.HEAVEN_HORN.get()));
         ModItems.HEAVEN_HORN.get().use(helper.getLevel(), player, InteractionHand.MAIN_HAND);
 
@@ -107,6 +115,47 @@ public final class HeavenlySummoningTests {
         });
         helper.runAfterDelay(SkyTimeline.FALL + 22 + SkyTimeline.RESTORE_LENGTH + 5, () -> {
             helper.assertFalse(SkyEventManager.hasEvent(player.getUUID()), "aborted event is removed");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 60)
+    public static void hornTakesThePlayerItIsPointedAt(GameTestHelper helper) {
+        ServerPlayer admin = helper.makeMockServerPlayerInLevel();
+        ServerPlayer victim = helper.makeMockServerPlayerInLevel();
+        Vec3 a = helper.absoluteVec(new Vec3(1.5, 2, 1.5));
+        Vec3 v = helper.absoluteVec(new Vec3(1.5, 2, 4.5));
+        victim.moveTo(v.x, v.y, v.z, 0f, 0f);
+        // look straight at the victim (+Z = yaw 0)
+        admin.moveTo(a.x, a.y, a.z, 0f, 0f);
+        admin.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(ModItems.HEAVEN_HORN.get()));
+        ModItems.HEAVEN_HORN.get().use(helper.getLevel(), admin, InteractionHand.MAIN_HAND);
+        helper.assertTrue(SkyEventManager.isBusy(victim), "the heavens come for the player the horn points at");
+        helper.assertFalse(SkyEventManager.isBusy(admin), "not for the one who blew it");
+        SkyEventManager.cancel(victim);
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = SkyTimeline.FREEZE + 120)
+    public static void timeStopsLocallyAroundTheScene(GameTestHelper helper) {
+        ensureRealm(helper);
+        ServerPlayer player = helper.makeMockServerPlayerInLevel();
+        player.moveTo(helper.absoluteVec(new Vec3(2.5, 2, 2.5)));
+        var item = new net.minecraft.world.entity.item.ItemEntity(helper.getLevel(), player.getX() + 1, player.getY() + 1,
+                player.getZ(), new ItemStack(net.minecraft.world.item.Items.STICK));
+        item.setNoGravity(false);
+        item.setNeverPickUp();
+        helper.getLevel().addFreshEntity(item);
+        helper.assertTrue(SkyEventManager.startNow(player), "event starts");
+        int[] age = new int[1];
+        // ItemEntity.age only advances inside a real tick (tickCount is bumped before the tick event).
+        helper.runAfterDelay(SkyTimeline.FREEZE + 5, () -> age[0] = item.getAge());
+        helper.runAfterDelay(SkyTimeline.FREEZE + 40, () -> {
+            helper.assertTrue(item.getAge() == age[0], "entities near the scene do not tick while time is stopped: "
+                    + age[0] + " -> " + item.getAge());
+            helper.assertTrue(player.tickCount > 0, "players still tick");
+            SkyEventManager.cancel(player);
+            item.discard();
             helper.succeed();
         });
     }

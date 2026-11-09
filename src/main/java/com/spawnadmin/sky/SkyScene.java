@@ -40,37 +40,71 @@ public final class SkyScene {
 
     // ================================================================== global intensities
 
-    /** How visible and luminous the glass shell is (0..1). */
+    /**
+     * How luminous the sealed shell is. Nothing glows while the first cracks creep; the sky starts
+     * to light up as the cracks join (CONNECT) and is fully lit when it gives way.
+     */
     public double shellGlow(double t, double restoreAt) {
-        double g = smooth(SkyTimeline.progress(t, SkyTimeline.GLOW, SkyTimeline.CRACK));
+        double g = smooth(SkyTimeline.progress(t, SkyTimeline.CONNECT, SkyTimeline.FALL));
         if (t >= restoreAt) {
-            g *= 1.0 - smoothstep(0.72, 1.0, restoreProgress(t, restoreAt));
+            g *= 1.0 - smoothstep(0.8, 1.0, restoreProgress(t, restoreAt));
         }
         return g;
     }
 
-    /** Extra brightness pulse of the sky (white bloom on the glass), strongest while it breaks. */
+    /** Extra white bloom on the glass: grows with the damage, bursts when the dome gives way. */
     public double skyPulse(double t, double restoreAt) {
         double glow = shellGlow(t, restoreAt);
-        double crack = SkyTimeline.progress(t, SkyTimeline.CRACK, SkyTimeline.FALL);
-        double burst = Math.exp(-Math.abs(t - SkyTimeline.FALL) / 6.0);
-        return glow * (0.25 + 0.3 * crack) + (t < restoreAt ? burst * 0.45 : 0);
+        double burst = t < restoreAt ? Math.exp(-Math.abs(t - SkyTimeline.FALL) / 8.0) : 0;
+        return glow * 0.3 + burst * 0.6;
     }
 
-    /** Crack front distance in the propagation metric. */
+    /** Crack front in the propagation metric: a slow, hesitant start that accelerates. */
     public double crackFront(double t, double restoreAt) {
-        double full = fracture.maxFront * 1.02;
-        double front = frontAt(Math.min(t, restoreAt), full);
+        double grow = SkyTimeline.progress(Math.min(t, restoreAt), SkyTimeline.FIRST_CRACK, SkyTimeline.CRACKS_COMPLETE);
+        double front = fracture.maxFront * 1.02 * Math.pow(grow, Fracture.FRONT_EXPONENT);
         if (t >= restoreAt) {
-            front *= 1.0 - smoothstep(0.5, 0.97, restoreProgress(t, restoreAt));
+            // The cracks heal last, after the shards are back, drawing back towards where they began.
+            front *= 1.0 - smoothstep(0.62, 0.95, restoreProgress(t, restoreAt));
         }
         return front;
     }
 
-    private static double frontAt(double t, double full) {
-        double p = SkyTimeline.progress(t, SkyTimeline.CRACK, SkyTimeline.SHATTER);
-        // Fast start, slowing as it reaches the rim: like a crack running out of energy.
-        return full * (1 - Math.pow(1 - p, 2.2));
+    /**
+     * Width multiplier of a crack: a fresh crack is a hair-thin line, it widens and deepens as it
+     * ages, and the whole network deepens as the dome is about to give way.
+     */
+    public double crackWidth(CrackSegment c, double front, double t) {
+        double age = (front - Math.min(c.da(), c.db())) / Math.max(fracture.maxFront * 0.3, 1e-9);
+        double deepen = 0.55 + 0.45 * smooth(SkyTimeline.progress(t, SkyTimeline.CONNECT - 40, SkyTimeline.FALL));
+        return (0.12 + 0.88 * smooth(age)) * deepen;
+    }
+
+    /** Overall crack brightness: the very first crack is barely visible. */
+    public double crackIntensity(double t, double restoreAt) {
+        double in = 0.25 + 0.75 * smooth(SkyTimeline.progress(t, SkyTimeline.FIRST_CRACK, SkyTimeline.SPREAD + 40));
+        double surge = 0.35 * smooth(SkyTimeline.progress(t, SkyTimeline.CHIPS, SkyTimeline.FALL));
+        return in + surge;
+    }
+
+    /** Brightness of the other reality behind the opening: it keeps growing while it opens. */
+    public double riftBrightness(double t, double restoreAt) {
+        double open = 0.25 + 1.05 * smooth(SkyTimeline.progress(t, SkyTimeline.FALL, SkyTimeline.FREEZE + 60));
+        if (t >= restoreAt) {
+            // The rift contracts first.
+            open *= 1.0 - smoothstep(0.0, 0.35, restoreProgress(t, restoreAt));
+        }
+        return open;
+    }
+
+    /** Volumetric light shafts pouring out of the rift. */
+    public double beams(double t, double restoreAt) {
+        if (restoreAt <= SkyTimeline.FALL) {
+            return 0;
+        }
+        double in = smooth(SkyTimeline.progress(t, SkyTimeline.FALL + 30, SkyTimeline.FREEZE));
+        double out = t >= restoreAt ? 1.0 - smoothstep(0.0, 0.25, restoreProgress(t, restoreAt)) : 1.0;
+        return in * out;
     }
 
     /** Strength of the "time stopped" look (0..1). */
@@ -137,8 +171,9 @@ public final class SkyScene {
     /** Pose of a debris splinter: chipped off with its shard, frozen with it, returned with it. */
     public void debrisPose(DebrisData d, double t, double restoreAt, ShardPose out) {
         out.flash = 0;
-        double clock = SkyTimeline.shardClock(t, restoreAt);
-        double tau = clock - d.detachDelay;
+        double tau = d.isChip()
+                ? SkyTimeline.frozenSeconds(t, restoreAt) - d.chipTime
+                : SkyTimeline.shardClock(t, restoreAt) - d.detachDelay;
         if (tau <= 0) {
             out.offset = V3.ZERO;
             out.rotation = Quat.IDENTITY;
@@ -161,10 +196,10 @@ public final class SkyScene {
 
     /** Glass under stress: shards tremble before breaking free. */
     private static void addShimmer(ShardData s, double t, double clock, ShardPose out) {
-        if (t < SkyTimeline.SHATTER || out.free > 0) {
+        if (t < SkyTimeline.CHIPS || out.free > 0) {
             return;
         }
-        double amp = smooth(SkyTimeline.progress(t, SkyTimeline.SHATTER, SkyTimeline.FALL)) * (s.detaches ? 1.0 : 0.3);
+        double amp = smooth(SkyTimeline.progress(t, SkyTimeline.CHIPS, SkyTimeline.FALL)) * (s.detaches ? 1.0 : 0.3);
         double wobble = Math.sin(t * 2.7 + s.tint * 40.0);
         out.offset = out.offset.add(s.normal.mul(0.12 * amp * wobble));
         out.rotation = out.rotation.mul(Quat.axisAngle(s.spinAxis, 0.012 * amp * Math.sin(t * 3.1 + s.tint * 20.0)));

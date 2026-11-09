@@ -2,7 +2,7 @@
 
 // Energy hand: additive white light with a fresnel rim and flowing streaks.
 // texCoord.x: coordinate along the arm/finger (for the flow), texCoord.y: local fade.
-// HandParams.x: overall intensity.
+// HandParams.x: overall intensity, y: pass (1 body, 0 glow), z: fill (0 silhouette .. 1 solid).
 uniform float GameTime;
 uniform vec4 HandParams;
 
@@ -38,11 +38,13 @@ void main() {
     if (HandParams.y > 0.5) {
         // Body pass: a pale solid core with a cyan rim, so the hand reads even against a bright sky.
         vec3 core = mix(vec3(0.97, 0.99, 1.0), vec3(0.45, 0.78, 1.0), smoothstep(0.15, 0.9, rim));
-        float a = clamp(0.55 + rim * 0.4, 0.0, 0.95) * fade * near;
+        float a = clamp(0.55 + rim * 0.4, 0.0, 0.95) * fade * near * HandParams.z;
         fragColor = vec4(core * (0.92 + flow * 0.08), a);
         return;
     }
-    float body = 0.10 + rim * 1.1 + flow * 0.14 + streak * 0.3;
+    // Silhouette first (rim only), then light flows through the whole hand as it fills.
+    float fill = HandParams.z;
+    float body = (0.10 + flow * 0.14 + streak * 0.3) * fill + rim * (1.1 + 0.6 * (1.0 - fill));
     vec3 c = vertexColor.rgb * body;
     c += vec3(0.55, 0.82, 1.0) * rim * rim * 0.7;
     fragColor = vec4(c * fade * mix(0.35, 1.0, near), 1.0);

@@ -35,6 +35,19 @@ public final class DomeShape {
         return SPHERE_CENTER.add(normalAt(u, v).mul(RADIUS + lift));
     }
 
+    /** Allocation-free {@link #pointAt}: writes the point into {@code out[0..2]}. */
+    public static void pointAtInto(double u, double v, double lift, double[] out) {
+        double r = Math.sqrt(u * u + v * v);
+        double theta = r * THETA_MAX;
+        double s = Math.sin(theta);
+        double c = Math.cos(theta);
+        double cphi = r < 1e-12 ? 1 : u / r, sphi = r < 1e-12 ? 0 : v / r;
+        double k = RADIUS + lift;
+        out[0] = s * cphi * k;
+        out[1] = c * k - CENTER_DROP;
+        out[2] = s * sphi * k;
+    }
+
     public static V3 pointAt(V2 p, double lift) {
         return pointAt(p.x(), p.y(), lift);
     }
