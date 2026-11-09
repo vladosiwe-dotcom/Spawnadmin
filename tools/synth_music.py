@@ -300,7 +300,7 @@ def shepard(dur, start_rate=0.15, end_rate=1.2, amp=1.0):
 
 def theme():
     """43 s score, aligned to SkyTimeline (seconds after the first crack):
-    FIRST_CRACK 0, SPREAD 3, CONNECT 9, CHIPS 12, FRAGMENTS 13.5, FALL 15, FREEZE 21, HAND 22.5,
+    PRESS 0, FIRST_CRACK (snap) 3, CONNECT 10, CHIPS 12.5, FRAGMENTS 13.75, FALL 15, FREEZE 21, HAND 22.5,
     GRAB 26.5, GRIP 27.3, LIFT 28, TELEPORT 31, RESTORE 32 .. 42.
     No bells, chimes, celesta or music box: piano, strings, plucks, choir, drums only."""
     total = 43.0
@@ -333,12 +333,12 @@ def theme():
         at += [0.34, 0.34, 0.5, 0.34, 0.5][k % 5] * max(0.45, 1 - k * 0.025)
         k += 1
     # CHIPS: a tension swell.
-    c = strings([hz("A2"), hz("D3"), hz("Eb3"), hz("G#3")], 1.6, 0.8, 1.2, 0.05, bright=2600)
-    pre[secs(12.0):secs(12.0) + len(c)] += c
+    c = strings([hz("A2"), hz("D3"), hz("Eb3"), hz("G#3")], 1.3, 0.8, 1.0, 0.05, bright=2600)
+    pre[secs(12.5):secs(12.5) + len(c)] += c
 
     pre = reverb(pre, 3.0, 0.36, 5000, seed=11)[: secs(total)]
     # FRAGMENTS: sudden silence...
-    pre[secs(13.5):] = 0
+    pre[secs(13.75):] = 0
     # ...then a reversed piano chord sucking everything in.
     rev = buf(1.0)
     for n in ("D3", "A3", "Eb4", "G4", "D5"):

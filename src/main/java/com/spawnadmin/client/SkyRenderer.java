@@ -357,7 +357,9 @@ final class SkyRenderer {
 
         ShaderInstance shader = ModShaders.glass;
         prepareSky(sky, camera, partial, shader);
-        shader.safeGetUniform("GlassParams").set((float) glow, 0.03f, (float) pulse, (float) stop);
+        // While the sky is pressed in, the bent glass visibly warps the sky behind it.
+        double pressNow = sky.scene().pressure(t, sky.restoreAt());
+        shader.safeGetUniform("GlassParams").set((float) glow, (float) (0.03 + 0.14 * pressNow), (float) pulse, (float) stop);
         RenderSystem.setShaderTexture(0, sceneTex);
         RenderSystem.setShaderTexture(1, CLOUDS);
         RenderSystem.setShader(() -> shader);
@@ -365,20 +367,22 @@ final class SkyRenderer {
                 GlStateManager.SourceFactor.ONE, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
         BufferBuilder buf = Tesselator.getInstance().begin(VertexFormat.Mode.TRIANGLES, DefaultVertexFormat.NEW_ENTITY);
         double restoreAt = sky.restoreAt();
+        double pressure = sky.scene().pressure(t, restoreAt);
         for (int o = 0; o < count; o++) {
             int i = order[o];
             ShardData s = shards.get(i);
             SkyScene.ShardPose pose = sky.poses[i];
             double free = pose.free;
             // Sealed glass is almost invisible against the sky it shows; free shards are solid sky.
-            double alpha = pose.alpha * Math.max(glow * 0.6 * rimFade(s.centroid2), free * 0.97);
+            double alpha = pose.alpha * Math.max(Math.max(glow * 0.6 * rimFade(s.centroid2), free * 0.97),
+                    pressVisible(s, pressure) * (1 - free));
             if (alpha <= 0.003) {
                 continue;
             }
             double edgeGlow = Math.min(1.0, free * 0.85 + pose.flash * 1.5);
             double broke = SkyTimeline.FALL + s.detachDelay * 20;
             double frozen = free > 0 && t > broke ? ticks - (t - broke) : 0;
-            emitShard(buf, sky, s, pose, bx, by, bz, (float) alpha, (float) edgeGlow, frozen);
+            emitShard(buf, sky, s, pose, bx, by, bz, (float) alpha, (float) edgeGlow, frozen, pressure);
         }
         drawDebris(sky, bx, by, bz, t, restoreAt, buf);
         draw(buf);
@@ -404,16 +408,40 @@ final class SkyRenderer {
         out[2] = vz + q.w() * tz + (q.x() * ty - q.y() * tx);
     }
 
+    /** The pressed-in glass shows around the impact before anything breaks. */
+    private static double pressVisible(ShardData s, double pressure) {
+        double d = s.impactDist / 0.32;
+        return 0.95 * Math.min(1, pressure * 1.6) * Math.exp(-d * d);
+    }
+
     private static void emitShard(BufferBuilder buf, ClientSkyEvent sky, ShardData s, SkyScene.ShardPose pose,
-                                  double bx, double by, double bz, float alpha, float edgeGlow, double frozen) {
+                                  double bx, double by, double bz, float alpha, float edgeGlow, double frozen,
+                                  double pressure) {
         Quat q = pose.rotation;
         int n = s.outline.length;
         ensureScratch(n);
         double cx = s.origin.x() + pose.offset.x(), cy = s.origin.y() + pose.offset.y(), cz = s.origin.z() + pose.offset.z();
         double h = s.thickness * 0.5;
         double nlx = s.normal.x(), nly = s.normal.y(), nlz = s.normal.z();
+        SkyScene scene = sky.scene();
+        // The dent: every vertex is pushed inward by the bowl depth at its own disc position (the
+        // shape rides along when the shard breaks free, and springs back during the restore).
+        double dc = pressure > 0 ? scene.dent(s.centroid2.x(), s.centroid2.y(), pressure) : 0;
+        if (pressure > 0) {
+            // tilt the face towards the impact, as the bowl's slope does
+            double d = s.impactDist, sigma = 0.2;
+            double slope = -2 * d / (sigma * sigma) * dc / DomeShape.blocksPerDiscUnit();
+            double tx = nlx + s.outward.x() * slope, ty = nly + s.outward.y() * slope, tz = nlz + s.outward.z() * slope;
+            double tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
+            nlx = tx / tl;
+            nly = ty / tl;
+            nlz = tz / tl;
+        }
         for (int k = 0; k < n; k++) {
-            V3 o = s.outer[k], in = s.inner[k];
+            V3 o0 = s.outer[k], in0 = s.inner[k];
+            double dk = pressure > 0 ? scene.dent(s.outline[k].x(), s.outline[k].y(), pressure) : 0;
+            V3 o = dk > 0 ? new V3(o0.x() - s.normal.x() * dk, o0.y() - s.normal.y() * dk, o0.z() - s.normal.z() * dk) : o0;
+            V3 in = dk > 0 ? new V3(in0.x() - s.normal.x() * dk, in0.y() - s.normal.y() * dk, in0.z() - s.normal.z() * dk) : in0;
             rotate(q, o.x(), o.y(), o.z(), A);
             A[0] += cx; A[1] += cy; A[2] += cz;
             sky.toWorld(A);
@@ -422,10 +450,10 @@ final class SkyRenderer {
             A[0] += cx; A[1] += cy; A[2] += cz;
             sky.toWorld(A);
             inX[k] = bx + A[0]; inY[k] = by + A[1]; inZ[k] = bz + A[2];
-            A[0] = s.origin.x() + o.x(); A[1] = s.origin.y() + o.y(); A[2] = s.origin.z() + o.z();
+            A[0] = s.origin.x() + o0.x(); A[1] = s.origin.y() + o0.y(); A[2] = s.origin.z() + o0.z();
             sky.toWorld(A);
             roX[k] = A[0]; roY[k] = A[1]; roZ[k] = A[2];
-            A[0] = s.origin.x() + in.x(); A[1] = s.origin.y() + in.y(); A[2] = s.origin.z() + in.z();
+            A[0] = s.origin.x() + in0.x(); A[1] = s.origin.y() + in0.y(); A[2] = s.origin.z() + in0.z();
             sky.toWorld(A);
             riX[k] = A[0]; riY[k] = A[1]; riZ[k] = A[2];
         }
@@ -433,19 +461,21 @@ final class SkyRenderer {
         rotate(q, nlx, nly, nlz, B);
         sky.toWorld(B);
         double fnx = B[0], fny = B[1], fnz = B[2];
-        rotate(q, nlx * h, nly * h, nlz * h, A);
+        double sx0 = s.normal.x(), sy0 = s.normal.y(), sz0 = s.normal.z();
+        rotate(q, sx0 * (h - dc), sy0 * (h - dc), sz0 * (h - dc), A);
         double cOx = A[0] + cx, cOy = A[1] + cy, cOz = A[2] + cz;
-        double cIx = -A[0] + cx, cIy = -A[1] + cy, cIz = -A[2] + cz;
+        rotate(q, sx0 * (-h - dc), sy0 * (-h - dc), sz0 * (-h - dc), A);
+        double cIx = A[0] + cx, cIy = A[1] + cy, cIz = A[2] + cz;
         C[0] = cOx; C[1] = cOy; C[2] = cOz;
         sky.toWorld(C);
         cOx = bx + C[0]; cOy = by + C[1]; cOz = bz + C[2];
         C[0] = cIx; C[1] = cIy; C[2] = cIz;
         sky.toWorld(C);
         cIx = bx + C[0]; cIy = by + C[1]; cIz = bz + C[2];
-        C[0] = s.origin.x() + nlx * h; C[1] = s.origin.y() + nly * h; C[2] = s.origin.z() + nlz * h;
+        C[0] = s.origin.x() + sx0 * h; C[1] = s.origin.y() + sy0 * h; C[2] = s.origin.z() + sz0 * h;
         sky.toWorld(C);
         double rcOx = C[0], rcOy = C[1], rcOz = C[2];
-        C[0] = s.origin.x() - nlx * h; C[1] = s.origin.y() - nly * h; C[2] = s.origin.z() - nlz * h;
+        C[0] = s.origin.x() - sx0 * h; C[1] = s.origin.y() - sy0 * h; C[2] = s.origin.z() - sz0 * h;
         sky.toWorld(C);
         double rcIx = C[0], rcIy = C[1], rcIz = C[2];
         float var = (float) s.tint;
@@ -528,6 +558,9 @@ final class SkyRenderer {
             return;
         }
         double intensityAll = scene.crackIntensity(t, r) * (1.0 + scene.skyPulse(t, r) * 0.6);
+        double pressure = scene.pressure(t, r);
+        // Light leaks through the great split as the two halves of the sky part.
+        double splitLight = 1.6 + 2.4 * scene.splitGap(t, r);
         ShaderInstance shader = ModShaders.crack;
         shader.safeGetUniform("CrackParams").set((float) intensityAll, 0f, 0f, 0f);
         RenderSystem.setShader(() -> shader);
@@ -548,14 +581,14 @@ final class SkyRenderer {
             }
             V2 mid = c.a().lerp(c.b(), 0.5);
             double fade = pose != null && pose.free > 0 ? 1.0 : rimFade(mid);
-            float intensity = (float) ((c.hairline() ? 0.55 : 1.0) * fade);
+            float intensity = (float) ((c.hairline() ? 0.55 : c.main() ? splitLight : 1.0) * fade);
             if (intensity <= 0.01f) {
                 continue;
             }
-            double width = c.width() * 2.2 * scene.crackWidth(c, front, t);
+            double width = c.width() * 2.2 * scene.crackWidth(c, front, t) * (c.main() ? 1.5 : 1.0);
             for (int k = 0; k + 1 < range.length; k += 2) {
                 if (range[k + 1] - range[k] > 1e-4) {
-                    emitCrack(buf, sky, c, i, range[k], range[k + 1], owner, pose, bx, by, bz, intensity, width);
+                    emitCrack(buf, sky, c, i, range[k], range[k + 1], owner, pose, bx, by, bz, intensity, width, pressure);
                 }
             }
         }
@@ -572,7 +605,7 @@ final class SkyRenderer {
 
     private static void emitCrack(BufferBuilder buf, ClientSkyEvent sky, CrackSegment c, int index, double f0, double f1,
                                   ShardData owner, SkyScene.ShardPose pose, double bx, double by, double bz,
-                                  float intensity, double width) {
+                                  float intensity, double width, double pressure) {
         double ax = c.a().x(), ay = c.a().y(), ex = c.b().x() - ax, ey = c.b().y() - ay;
         double segLen = Math.sqrt(ex * ex + ey * ey);
         double nx = -ey / Math.max(segLen, 1e-12), ny = ex / Math.max(segLen, 1e-12);
@@ -586,7 +619,7 @@ final class SkyRenderer {
             double fullT = f; // position along the whole segment
             double off = (p == 0 || p == pieces) ? 0 : (hash(index, (int) Math.round(fullT * 64)) - 0.5) * 2 * wander;
             double u = ax + ex * fullT + nx * off, v = ay + ey * fullT + ny * off;
-            crackPoint(sky, u, v, owner, pose, A);
+            crackPoint(sky, u, v, owner, pose, pressure, A);
             double x = bx + A[0], y = by + A[1], z = bz + A[2];
             if (p > 0) {
                 double dx = x - prevX, dy = y - prevY, dz = z - prevZ;
@@ -609,9 +642,10 @@ final class SkyRenderer {
 
     /** Crack point in world axes relative to the event center; hairlines ride on their shard. */
     private static void crackPoint(ClientSkyEvent sky, double u, double v, ShardData owner, SkyScene.ShardPose pose,
-                                   double[] out) {
-        DomeShape.pointAtInto(u, v, CRACK_LIFT, out);
-        if (owner != null && pose != null && pose.free > 0) {
+                                   double pressure, double[] out) {
+        double dent = pressure > 0 ? sky.scene().dent(u, v, pressure) : 0;
+        DomeShape.pointAtInto(u, v, CRACK_LIFT - dent, out);
+        if (owner != null && pose != null) {
             double lx = out[0] - owner.origin.x(), ly = out[1] - owner.origin.y(), lz = out[2] - owner.origin.z();
             rotate(pose.rotation, lx, ly, lz, out);
             out[0] += owner.origin.x() + pose.offset.x();
@@ -629,10 +663,9 @@ final class SkyRenderer {
     // ------------------------------------------------------------------ hand
 
     private static void drawHand(ClientSkyEvent sky, double bx, double by, double bz, double t, double r) {
-        if (!sky.state.locked()) {
-            return;
-        }
-        if (!HandRig.pose(t, r, sky.lockLocal(), sky.state.lockYaw(), sky.riftHeart(), HAND)) {
+        // Before the target is caught the hand chases them; afterwards it follows the server's lock.
+        V3 target = sky.state.locked() ? sky.lockLocal() : sky.aim((float) (t - Math.floor(t)));
+        if (!HandRig.pose(t, r, target, sky.state.lockYaw(), sky.riftHeart(), HAND)) {
             return;
         }
         ShaderInstance shader = ModShaders.hand;

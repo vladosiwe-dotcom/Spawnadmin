@@ -16,13 +16,46 @@ import com.spawnadmin.sky.geom.V3;
  * moment time stopped, so every shard flies back along a path that begins exactly where it hung.</p>
  */
 public final class SkyScene {
-    private static final V3 GRAVITY = new V3(0, -7.0, 0);
-    private static final double DRAG = 0.45;
+    /** Real-feeling fall: strong gravity, light air drag (terminal speed ~150 blocks/s, never reached). */
+    private static final V3 GRAVITY = new V3(0, -18.0, 0);
+    private static final double DRAG = 0.12;
+    /** How deep the sky is pressed in at the impact before it snaps (blocks). */
+    public static final double DENT_DEPTH = 7.0;
+    private static final double DENT_RADIUS = 0.2;
+
+    /** Ground height (relative to the event center, fracture frame) at a fracture-frame (x, z). */
+    public interface Ground {
+        double heightAt(double x, double z);
+    }
 
     public final Fracture fracture;
+    private final Ground ground;
+    // Landing caches: computed once per shard/debris from the deterministic trajectory.
+    private final double[] landTau;
+    private final V3[] landOffset;
+    private final Quat[] landRot, flatRot;
+    private final double[] debrisLandTau;
+    private final V3[] debrisLandOffset;
+    private final Quat[] debrisLandRot, debrisFlatRot;
 
     public SkyScene(Fracture fracture) {
+        this(fracture, (x, z) -> 0.0);
+    }
+
+    public SkyScene(Fracture fracture, Ground ground) {
         this.fracture = fracture;
+        this.ground = ground;
+        int n = fracture.shards.size(), m = fracture.debris.size();
+        landTau = new double[n];
+        java.util.Arrays.fill(landTau, Double.NaN);
+        landOffset = new V3[n];
+        landRot = new Quat[n];
+        flatRot = new Quat[n];
+        debrisLandTau = new double[m];
+        java.util.Arrays.fill(debrisLandTau, Double.NaN);
+        debrisLandOffset = new V3[m];
+        debrisLandRot = new Quat[m];
+        debrisFlatRot = new Quat[m];
     }
 
     /** Mutable pose of a shard, reused per frame to avoid garbage. */
@@ -59,10 +92,40 @@ public final class SkyScene {
         return glow * 0.3 + burst * 0.6;
     }
 
-    /** Crack front in the propagation metric: a slow, hesitant start that accelerates. */
+    /**
+     * How hard the sky is being pressed in (0..1): it bows inward before it snaps, keeps the load
+     * while it cracks, and springs back during the restore.
+     */
+    public double pressure(double t, double restoreAt) {
+        double p = 0.8 * Math.pow(smooth(SkyTimeline.progress(t, SkyTimeline.PRESS, SkyTimeline.FIRST_CRACK)), 1.6)
+                + 0.2 * smooth(SkyTimeline.progress(t, SkyTimeline.FIRST_CRACK, SkyTimeline.FALL));
+        if (t >= restoreAt) {
+            p *= 1.0 - smoothstep(0.15, 0.6, restoreProgress(t, restoreAt));
+        }
+        return p;
+    }
+
+    /** Inward displacement (blocks) of the shell at disc point (u, v): a smooth bowl around the impact. */
+    public double dent(double u, double v, double pressure) {
+        double du = u - fracture.impact.x(), dv = v - fracture.impact.y();
+        double d2 = (du * du + dv * dv) / (DENT_RADIUS * DENT_RADIUS);
+        return DENT_DEPTH * pressure * Math.exp(-d2);
+    }
+
+    /** How far the two halves of the sky have parted along the great split (0..1). */
+    public double splitGap(double t, double restoreAt) {
+        double g = smooth(SkyTimeline.progress(t, SkyTimeline.CONNECT - 40, SkyTimeline.FALL));
+        if (t >= restoreAt) {
+            g *= 1.0 - smoothstep(0.1, 0.5, restoreProgress(t, restoreAt));
+        }
+        return g;
+    }
+
+    /** Crack front in the propagation metric: a sudden star at the snap, then slow and accelerating. */
     public double crackFront(double t, double restoreAt) {
         double grow = SkyTimeline.progress(Math.min(t, restoreAt), SkyTimeline.FIRST_CRACK, SkyTimeline.CRACKS_COMPLETE);
-        double front = fracture.maxFront * 1.02 * Math.pow(grow, Fracture.FRONT_EXPONENT);
+        double burst = t >= SkyTimeline.FIRST_CRACK ? 0.004 * smooth((Math.min(t, restoreAt) - SkyTimeline.FIRST_CRACK) / 5.0) : 0;
+        double front = fracture.maxFront * 1.02 * Math.max(Math.pow(grow, Fracture.FRONT_EXPONENT), burst);
         if (t >= restoreAt) {
             // The cracks heal last, after the shards are back, drawing back towards where they began.
             front *= 1.0 - smoothstep(0.62, 0.95, restoreProgress(t, restoreAt));
@@ -82,9 +145,10 @@ public final class SkyScene {
 
     /** Overall crack brightness: the very first crack is barely visible. */
     public double crackIntensity(double t, double restoreAt) {
-        double in = 0.25 + 0.75 * smooth(SkyTimeline.progress(t, SkyTimeline.FIRST_CRACK, SkyTimeline.SPREAD + 40));
+        double in = 0.55 + 0.45 * smooth(SkyTimeline.progress(t, SkyTimeline.FIRST_CRACK, SkyTimeline.FIRST_CRACK + 80));
+        double snap = t >= SkyTimeline.FIRST_CRACK ? 1.2 * Math.exp(-(t - SkyTimeline.FIRST_CRACK) / 6.0) : 0;
         double surge = 0.35 * smooth(SkyTimeline.progress(t, SkyTimeline.CHIPS, SkyTimeline.FALL));
-        return in + surge;
+        return in + snap + surge;
     }
 
     /** Brightness of the other reality behind the opening: it keeps growing while it opens. */
@@ -128,15 +192,87 @@ public final class SkyScene {
         out.flash = 0;
         out.alpha = 1;
         double clock = SkyTimeline.shardClock(t, restoreAt);
+        fallPose(s, clock, out);
+        land(s, clock - s.detachDelay, out);
         if (t < restoreAt) {
-            fallPose(s, clock, out);
             addShimmer(s, t, clock, out);
         } else {
-            fallPose(s, clock, out);
             restorePose(s, restoreProgress(t, restoreAt), out);
         }
-        double y = s.origin.y() + out.offset.y();
-        out.alpha = clamp((y - 0.5) / 4.0);
+        // The halves part only while the glass is whole; a free shard leaves the push behind.
+        double gap = splitGap(t, restoreAt) * (1 - out.free);
+        if (gap > 0 && s.splitPush.length() > 0) {
+            out.offset = out.offset.add(s.splitPush.mul(gap));
+        }
+    }
+
+    /** Ground contact: the shard lies where it hit the ground, flat, after a small bounce. */
+    private void land(ShardData s, double tau, ShardPose out) {
+        if (!s.detaches || s.hovers || tau <= 0) {
+            return;
+        }
+        int i = s.index;
+        if (Double.isNaN(landTau[i])) {
+            computeLanding(i, s.origin, s.velocity, s.spinAxis, s.spinSpeed, s.normal, s.thickness * 0.5,
+                    landTau, landOffset, landRot, flatRot);
+        }
+        settle(tau, landTau[i], landOffset[i], landRot[i], flatRot[i], out);
+    }
+
+    private void computeLanding(int i, V3 origin, V3 velocity, V3 axis, double spin, V3 normal, double half,
+                                double[] tauOut, V3[] offOut, Quat[] rotOut, Quat[] flatOut) {
+        ShardPose p = new ShardPose();
+        double prev = 0;
+        for (double tau = 0.05; tau <= 12.0; tau += 0.05) {
+            ballistic(velocity, axis, spin, tau, p);
+            double x = origin.x() + p.offset.x(), z = origin.z() + p.offset.z();
+            double gy = ground.heightAt(x, z);
+            if (origin.y() + p.offset.y() - half <= gy + 0.05) {
+                double lo = prev, hi = tau;
+                for (int k = 0; k < 8; k++) {
+                    double mid = (lo + hi) * 0.5;
+                    ballistic(velocity, axis, spin, mid, p);
+                    if (origin.y() + p.offset.y() - half <= gy + 0.05) hi = mid; else lo = mid;
+                }
+                ballistic(velocity, axis, spin, hi, p);
+                tauOut[i] = hi;
+                offOut[i] = new V3(p.offset.x(), gy + half + 0.06 - origin.y(), p.offset.z());
+                rotOut[i] = p.rotation;
+                V3 n = p.rotation.rotate(normal);
+                V3 up = n.y() >= 0 ? V3.UP : V3.UP.mul(-1);
+                flatOut[i] = Quat.fromTo(n, up).mul(p.rotation);
+                return;
+            }
+            prev = tau;
+        }
+        tauOut[i] = Double.POSITIVE_INFINITY;
+    }
+
+    private static void settle(double tau, double landAt, V3 landOff, Quat landR, Quat flatR, ShardPose out) {
+        if (tau < landAt) {
+            return;
+        }
+        double k = (tau - landAt) / 0.3;
+        double bounce = Math.sin(Math.PI * clamp(k)) * 0.45 * (1 - clamp(k));
+        out.offset = landOff.add(new V3(0, bounce, 0));
+        out.rotation = landR.slerp(flatR, smooth(clamp(k * 1.4)));
+    }
+
+    /** Seconds (shard clock) at which shard {@code i} hits the ground, or infinity / NaN if never. */
+    public double landingTime(ShardData s) {
+        if (!s.detaches || s.hovers) {
+            return Double.POSITIVE_INFINITY;
+        }
+        if (Double.isNaN(landTau[s.index])) {
+            computeLanding(s.index, s.origin, s.velocity, s.spinAxis, s.spinSpeed, s.normal, s.thickness * 0.5,
+                    landTau, landOffset, landRot, flatRot);
+        }
+        return landTau[s.index] + s.detachDelay;
+    }
+
+    public V3 landingOffset(ShardData s) {
+        landingTime(s);
+        return landOffset[s.index];
     }
 
     /** Scripted motion after the shard breaks free; {@code clock} is seconds since FALL. */
@@ -183,6 +319,14 @@ public final class SkyScene {
         }
         out.free = 1;
         ballistic(d.velocity, d.spinAxis, d.spinSpeed, tau, out);
+        int i = d.index;
+        if (Double.isNaN(debrisLandTau[i])) {
+            computeLanding(i, d.origin, d.velocity, d.spinAxis, d.spinSpeed, d.normal, 0.02,
+                    debrisLandTau, debrisLandOffset, debrisLandRot, debrisFlatRot);
+        }
+        if (debrisLandOffset[i] != null) {
+            settle(tau, debrisLandTau[i], debrisLandOffset[i], debrisLandRot[i], debrisFlatRot[i], out);
+        }
         out.alpha = smooth(clamp(tau / 0.15));
         if (t >= restoreAt) {
             double u = clamp((restoreProgress(t, restoreAt) - d.restoreStart) / d.restoreLength);
@@ -190,8 +334,6 @@ public final class SkyScene {
             // Splinters melt back into their shard as it seals.
             out.alpha *= 1.0 - smoothstep(0.82, 1.0, u);
         }
-        double y = d.origin.y() + out.offset.y();
-        out.alpha *= clamp((y - 0.5) / 4.0);
     }
 
     /** Glass under stress: shards tremble before breaking free. */

@@ -80,10 +80,10 @@ public final class HeavenlySummoningTests {
         player.moveTo(start);
         helper.assertTrue(SkyEventManager.startNow(player), "event starts");
 
-        helper.runAfterDelay(SkyTimeline.FREEZE + 2, () -> {
+        helper.runAfterDelay(SkyTimeline.GRAB + 2, () -> {
             AttributeInstance flight = player.getAttribute(NeoForgeMod.CREATIVE_FLIGHT);
             helper.assertTrue(flight != null && flight.hasModifier(SpawnAdmin.id("summoning_hold")),
-                    "target may float while frozen (no flying kick)");
+                    "target may float once caught (no flying kick)");
         });
         helper.runAfterDelay(SkyTimeline.TELEPORT + 5, () -> {
             helper.assertTrue(AdminRealm.isInRealm(player), "carried into the administrator's realm");
@@ -169,7 +169,7 @@ public final class HeavenlySummoningTests {
         helper.assertTrue(AdminRealm.enter(player), "enter works");
         helper.assertTrue(AdminRealm.isInRealm(player), "in realm");
         if (player.level().dimension().equals(AdminRealm.DEFAULT_REALM)) {
-            helper.assertFalse(player.level().getBlockState(AdminRealm.ARRIVAL.below()).isAir(), "arrival platform built");
+            helper.assertFalse(player.level().getBlockState(AdminRealm.ARRIVAL.below()).isAir(), "arrival island built");
         }
         AdminRealm.leave(player);
         helper.assertTrue(player.level() == helper.getLevel() && player.position().distanceTo(start) < 2.0, "back home");

@@ -47,6 +47,13 @@ import java.util.UUID;
  * ticking), never for the whole server and never for other players.</p>
  */
 public final class SkyEventManager {
+    /** Running further than this from the (fixed) rift before being caught breaks the summoning. */
+    public static final double ESCAPE_RADIUS = 200.0;
+
+    private static double horizontal(Vec3 a, Vec3 b) {
+        return Math.hypot(a.x - b.x, a.z - b.z);
+    }
+
     /** Radius around the scene in which non-player entities freeze while time is stopped. */
     public static final double FREEZE_RADIUS = 96.0;
 
@@ -252,11 +259,14 @@ public final class SkyEventManager {
                 abort(event, "target changed dimension");
             } else if (event.lockPos != null && t < SkyTimeline.LIFT && target.position().distanceTo(event.lockPos) > 8.0) {
                 abort(event, "target was teleported away");
+            } else if (event.lockPos == null && horizontal(target.position(), event.center) > ESCAPE_RADIUS) {
+                abort(event, "target escaped the sky");
             }
         }
 
         if (!event.aborted && !event.teleported && target != null) {
-            if (t >= SkyTimeline.FREEZE && event.lockPos == null) {
+            // The target may run until the hand catches them: they are locked where they are at GRAB.
+            if (t >= SkyTimeline.GRAB && event.lockPos == null) {
                 lockTarget(event, target);
             }
             if (event.lockPos != null && t < SkyTimeline.TELEPORT) {

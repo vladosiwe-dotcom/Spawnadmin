@@ -39,10 +39,15 @@ public final class ShardData {
     public final double tint;
     /** Glass thickness of this shard (real panes break into pieces of slightly different depth). */
     public final double thickness;
+    /** Unit tangent at the centroid pointing away from the impact (along the dome). */
+    public final V3 outward;
+    /** How far (blocks, as a vector) this shard is pushed when the two halves of the sky part. */
+    public final V3 splitPush;
 
     ShardData(int index, V2[] outline, V2 centroid2, V3 origin, V3 normal, V3[] outer, V3[] inner, double impactDist,
               boolean detaches, boolean hovers, double detachDelay, V3 velocity, V3 spinAxis, double spinSpeed,
-              V3 hoverOffset, double hoverTilt, double restoreStart, double restoreLength, double tint, double thickness) {
+              V3 hoverOffset, double hoverTilt, double restoreStart, double restoreLength, double tint, double thickness,
+              V3 outward, V3 splitPush) {
         this.index = index;
         this.outline = outline;
         this.centroid2 = centroid2;
@@ -63,6 +68,8 @@ public final class ShardData {
         this.restoreLength = restoreLength;
         this.tint = tint;
         this.thickness = thickness;
+        this.outward = outward;
+        this.splitPush = splitPush;
     }
 
     /** Area of the outline in disc units². */

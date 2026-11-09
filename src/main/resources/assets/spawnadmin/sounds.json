@@ -158,5 +158,40 @@
         "attenuation_distance": 320
       }
     ]
+  },
+  "glass_press": {
+    "subtitle": "subtitles.spawnadmin.glass_press",
+    "sounds": [
+      {
+        "name": "spawnadmin:glass_press",
+        "attenuation_distance": 200
+      }
+    ]
+  },
+  "glass_snap": {
+    "subtitle": "subtitles.spawnadmin.glass_snap",
+    "sounds": [
+      {
+        "name": "spawnadmin:glass_snap",
+        "attenuation_distance": 320
+      }
+    ]
+  },
+  "glass_land": {
+    "subtitle": "subtitles.spawnadmin.glass_land",
+    "sounds": [
+      {
+        "name": "spawnadmin:glass_land1",
+        "attenuation_distance": 64
+      },
+      {
+        "name": "spawnadmin:glass_land2",
+        "attenuation_distance": 64
+      },
+      {
+        "name": "spawnadmin:glass_land3",
+        "attenuation_distance": 64
+      }
+    ]
   }
 }

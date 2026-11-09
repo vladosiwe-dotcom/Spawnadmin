@@ -123,7 +123,7 @@ class FractureTest {
         SkyScene scene = new SkyScene(Fracture.generate(20261108L));
         double r = SkyTimeline.RESTORE;
         int[] visible = new int[4];
-        int[] ticks = {10, SkyTimeline.SPREAD, SkyTimeline.CONNECT, SkyTimeline.CHIPS};
+        int[] ticks = {SkyTimeline.FIRST_CRACK - 1, SkyTimeline.FIRST_CRACK + 3, SkyTimeline.CONNECT, SkyTimeline.CHIPS};
         for (int k = 0; k < ticks.length; k++) {
             double front = scene.crackFront(ticks[k], r);
             for (CrackSegment c : scene.fracture.cracks) {
@@ -134,16 +134,59 @@ class FractureTest {
             }
         }
         int total = scene.fracture.cracks.size();
-        assertTrue(visible[0] >= 1 && visible[0] < total * 0.02, "first: a single small crack, " + visible[0]);
-        assertTrue(visible[1] > visible[0] && visible[1] < total * 0.15, "then thin branches, " + visible[1]);
+        assertEquals(0, visible[0], "nothing cracks while the glass is only pressed in");
+        assertTrue(visible[1] >= 1 && visible[1] < total * 0.05, "it snaps: a small star of cracks, " + visible[1]);
         assertTrue(visible[2] > visible[1] && visible[2] < total * 0.9, "then they join up, " + visible[2]);
         assertTrue(visible[3] > total * 0.95, "finally the whole dome is cracked, " + visible[3]);
         assertTrue(scene.fracture.origins.size() >= 3, "new cracks start in other places too");
         // A fresh crack is a hair-thin line; old cracks are wide.
         CrackSegment first = scene.fracture.cracks.stream().min((a, b) -> Double.compare(Math.min(a.da(), a.db()), Math.min(b.da(), b.db()))).orElseThrow();
-        double early = scene.crackWidth(first, scene.crackFront(15, r), 15);
+        double early = scene.crackWidth(first, scene.crackFront(SkyTimeline.FIRST_CRACK + 4, r), SkyTimeline.FIRST_CRACK + 4);
         double late = scene.crackWidth(first, scene.crackFront(SkyTimeline.FALL, r), SkyTimeline.FALL);
         assertTrue(early < 0.4 * late, "cracks widen and deepen: " + early + " -> " + late);
+    }
+
+    @Test
+    void theSkyIsPressedInThenSnapsAndSplitsInTwo() {
+        SkyScene scene = new SkyScene(Fracture.generate(20261108L));
+        double r = SkyTimeline.RESTORE;
+        V2 c = scene.fracture.impact;
+        assertEquals(0.0, scene.pressure(SkyTimeline.PRESS, r), 1e-9, "nothing at first");
+        double atSnap = scene.dent(c.x(), c.y(), scene.pressure(SkyTimeline.FIRST_CRACK, r));
+        assertTrue(atSnap > 4.0, "the glass is pressed in several blocks deep before it snaps: " + atSnap);
+        assertTrue(scene.dent(c.x() + 0.6, c.y(), scene.pressure(SkyTimeline.FIRST_CRACK, r)) < 0.1, "only around the impact");
+        assertEquals(0.0, scene.pressure(r + SkyTimeline.RESTORE_LENGTH, r), 1e-9, "it springs back");
+        long main = scene.fracture.cracks.stream().filter(CrackSegment::main).count();
+        assertTrue(main > 10, "a great crack splits the sky: " + main);
+        double front = scene.crackFront(SkyTimeline.FIRST_CRACK + 30, r);
+        long mainVisible = scene.fracture.cracks.stream().filter(CrackSegment::main)
+                .filter(seg -> seg.visibleRange(front)[1] > 0.99).count();
+        assertTrue(mainVisible > main * 0.8, "the split runs across the whole sky within 1.5 s: " + mainVisible + "/" + main);
+        assertTrue(scene.splitGap(SkyTimeline.FALL, r) > 0.99, "the halves part before the collapse");
+    }
+
+    @Test
+    void shardsFallAllTheWayDownAndLieFlatOnTheGround() {
+        // ground 30 blocks below the event centre in one half, 0 in the other
+        SkyScene scene = new SkyScene(Fracture.generate(77L), (x, z) -> x > 0 ? -30.0 : 0.0);
+        double r = SkyTimeline.RESTORE;
+        SkyScene.ShardPose p = new SkyScene.ShardPose();
+        int landed = 0, falling = 0;
+        for (ShardData s : scene.fracture.shards) {
+            if (!s.detaches || s.hovers) continue;
+            falling++;
+            scene.shardPose(s, SkyTimeline.FREEZE, r, p);
+            double x = s.origin.x() + p.offset.x();
+            double y = s.origin.y() + p.offset.y();
+            double ground = x > 0 ? -30.0 : 0.0;
+            if (Math.abs(y - ground) < s.thickness + 0.6) {
+                landed++;
+                double up = Math.abs(p.rotation.rotate(s.normal).y());
+                assertTrue(up > 0.99, "a landed shard lies flat, |n.y| = " + up);
+            }
+            assertTrue(y > ground - 0.5, "never below the ground");
+        }
+        assertTrue(landed > falling * 0.85, "the glass reaches the ground before time stops: " + landed + "/" + falling);
     }
 
     @Test

@@ -30,5 +30,8 @@
   "subtitles.spawnadmin.rift_open": "The sky opens",
   "subtitles.spawnadmin.grab_close": "Giant fingers close",
   "subtitles.spawnadmin.lift_wind": "Rushing air",
-  "subtitles.spawnadmin.vanish_flash": "A flash of heaven"
+  "subtitles.spawnadmin.vanish_flash": "A flash of heaven",
+  "subtitles.spawnadmin.glass_press": "The sky creaks under pressure",
+  "subtitles.spawnadmin.glass_snap": "The sky snaps",
+  "subtitles.spawnadmin.glass_land": "Glass smashes on the ground"
 }

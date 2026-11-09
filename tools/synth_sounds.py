@@ -286,12 +286,10 @@ def restore():
 SOUNDS = {
     "heaven_horn": horn,
     "first_crack": first_crack,
-    "sky_crack": cracking,
     "rift_open": rift_open,
     "grab_close": grab_close,
     "lift_wind": lift_wind,
     "vanish_flash": vanish_flash,
-    "sky_shatter": shatter,
     "time_stop": time_stop,
     "hand_appear": hand_appear,
     "grab_teleport": grab_teleport,

@@ -146,7 +146,7 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
             return false;
         }
         double t = event.time(0);
-        return t >= SkyTimeline.FIRST_CRACK && t < SkyTimeline.TELEPORT + 2 && t < event.restoreAt();
+        return t >= SkyTimeline.PRESS && t < SkyTimeline.TELEPORT + 2 && t < event.restoreAt();
     }
 
     /** Client side of the local time stop: entities near the scene stop animating too. */
@@ -192,9 +192,10 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
             double a = 0;
             double fall = t < event.restoreAt() ? Math.exp(-Math.abs(t - SkyTimeline.FALL) / 12.0) : 0;
             double grip = t >= SkyTimeline.GRIP && t < event.restoreAt() ? Math.exp(-(t - SkyTimeline.GRIP) / 7.0) : 0;
+            double snap = t >= SkyTimeline.FIRST_CRACK && t < event.restoreAt() ? Math.exp(-(t - SkyTimeline.FIRST_CRACK) / 5.0) : 0;
             if (target) {
                 a += 0.06 * SkyScene.smooth(SkyTimeline.progress(t, SkyTimeline.CONNECT, SkyTimeline.FALL));
-                a += 1.1 * fall + 1.6 * grip;
+                a += 0.7 * snap + 1.1 * fall + 1.6 * grip;
                 if (t >= SkyTimeline.LIFT && t < SkyTimeline.TELEPORT) {
                     a += 0.7 * SkyTimeline.progress(t, SkyTimeline.LIFT, SkyTimeline.TELEPORT);
                 }
@@ -202,7 +203,7 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
                 roll += (float) (2.4 * SkyScene.smooth(SkyTimeline.progress(t, SkyTimeline.HAND, SkyTimeline.GRAB))
                         * (1 - SkyScene.smooth(SkyTimeline.progress(t, SkyTimeline.LIFT, SkyTimeline.LIFT + 15))));
             } else {
-                a += (0.5 * fall + 0.45 * grip) * near;
+                a += (0.35 * snap + 0.5 * fall + 0.45 * grip) * near;
             }
             pitch += (float) (a * (Math.sin(secs * 31) * 0.6 + Math.sin(secs * 47 + 1) * 0.4));
             yaw += (float) (a * (Math.sin(secs * 37 + 2) * 0.6 + Math.sin(secs * 23 + 3) * 0.4));
@@ -278,7 +279,9 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
                 V3 held = event.heldPosition(t);
                 play(event, ModSounds.GRAB_CLOSE.get(), SoundSource.AMBIENT, held != null ? world(event, held) : null, 1.0f);
             }
+            trackTarget(event, level);
             moveRemoteTarget(event, level, t);
+            landingEffects(event, level, t);
         }
         if (events.isEmpty()) {
             if (++idleTicks > 100 && SceneCopy.allocated()) {
@@ -286,6 +289,51 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
             }
         } else {
             idleTicks = 0;
+        }
+    }
+
+    /** The hand chases the target until it is caught. */
+    private void trackTarget(ClientSkyEvent event, ClientLevel level) {
+        Entity entity = level.getEntity(event.state.targetEntityId());
+        if (entity == null) {
+            return;
+        }
+        event.updateAim(new V3(entity.getX() - event.state.cx(), entity.getY() - event.state.cy(), entity.getZ() - event.state.cz()));
+    }
+
+    /**
+     * Shards hitting the ground: a burst of glass crumbs where each one lands and, for the larger
+     * ones, the sound of glass smashing on the ground. Purely visual: no damage, no block changes.
+     */
+    private void landingEffects(ClientSkyEvent event, ClientLevel level, double t) {
+        SkyScene scene = event.scene();
+        double r = event.restoreAt();
+        double now = SkyTimeline.shardClock(t, r), before = SkyTimeline.shardClock(t - 1, r);
+        if (now <= before) {
+            return;
+        }
+        int sounds = 0;
+        var glass = new net.minecraft.core.particles.BlockParticleOption(net.minecraft.core.particles.ParticleTypes.BLOCK,
+                net.minecraft.world.level.block.Blocks.GLASS.defaultBlockState());
+        for (var s : scene.fracture.shards) {
+            if (!s.detaches || s.hovers) continue;
+            double land = scene.landingTime(s);
+            if (land <= before || land > now) continue;
+            V3 at = event.toWorld(s.origin.add(scene.landingOffset(s)));
+            double x = event.state.cx() + at.x(), y = event.state.cy() + at.y(), z = event.state.cz() + at.z();
+            double size = Math.sqrt(Math.abs(s.area2())) * 115;
+            int n = (int) Math.min(40, 6 + size * 3);
+            for (int i = 0; i < n; i++) {
+                level.addParticle(glass, x + (level.random.nextDouble() - 0.5) * size * 0.6, y + 0.2,
+                        z + (level.random.nextDouble() - 0.5) * size * 0.6,
+                        (level.random.nextDouble() - 0.5) * 0.4, 0.15 + level.random.nextDouble() * 0.35,
+                        (level.random.nextDouble() - 0.5) * 0.4);
+            }
+            if (size > 3 && sounds++ < 3) {
+                Minecraft.getInstance().getSoundManager().play(new SimpleSoundInstance(ModSounds.GLASS_LAND.get().getLocation(),
+                        SoundSource.AMBIENT, 0.9f, 0.8f + level.random.nextFloat() * 0.4f, SoundInstance.createUnseededRandom(),
+                        false, 0, SoundInstance.Attenuation.LINEAR, x, y, z, false));
+            }
         }
     }
 
@@ -325,12 +373,17 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
         Vec3 impact = world(event, event.toWorld(DomeShape.pointAt(scene.fracture.impact, 0)));
         Vec3 rift = world(event, event.riftHeart());
         switch (phase) {
-            case FIRST_CRACK -> {
-                play(event, ModSounds.FIRST_CRACK.get(), SoundSource.AMBIENT, impact, 1.0f);
+            case PRESS -> {
+                // The sky is pressed in: the glass creaks and groans under the load.
+                play(event, ModSounds.GLASS_PRESS.get(), SoundSource.AMBIENT, impact, 1.0f);
                 Minecraft.getInstance().getMusicManager().stopPlaying();
                 event.theme = play(event, ModSounds.THEME_SUMMONING.get(), SoundSource.MUSIC, null, 1.0f);
             }
-            case SPREAD -> play(event, ModSounds.SKY_CRACK.get(), SoundSource.AMBIENT, impact, 1.0f);
+            case FIRST_CRACK -> {
+                // It snaps: one sharp crack, then the cracks run on.
+                play(event, ModSounds.GLASS_SNAP.get(), SoundSource.AMBIENT, impact, 1.0f);
+                play(event, ModSounds.SKY_CRACK.get(), SoundSource.AMBIENT, impact, 0.9f);
+            }
             case FALL -> {
                 play(event, ModSounds.SKY_SHATTER.get(), SoundSource.AMBIENT, rift, 1.0f);
                 play(event, ModSounds.RIFT_OPEN.get(), SoundSource.AMBIENT, rift, 1.0f);

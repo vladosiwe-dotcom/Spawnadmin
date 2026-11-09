@@ -10,6 +10,19 @@ public record Quat(double w, double x, double y, double z) {
         return new Quat(Math.cos(h), a.x() * s, a.y() * s, a.z() * s);
     }
 
+    /** Shortest-arc rotation taking unit vector {@code a} onto unit vector {@code b}. */
+    public static Quat fromTo(V3 a, V3 b) {
+        double d = a.dot(b);
+        if (d > 0.999999) {
+            return IDENTITY;
+        }
+        if (d < -0.999999) {
+            return axisAngle(a.anyPerpendicular(), Math.PI);
+        }
+        V3 c = a.cross(b);
+        return new Quat(1 + d, c.x(), c.y(), c.z()).normalize();
+    }
+
     public Quat mul(Quat q) {
         return new Quat(
                 w * q.w - x * q.x - y * q.y - z * q.z,

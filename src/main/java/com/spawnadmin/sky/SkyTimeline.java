@@ -6,29 +6,34 @@ package com.spawnadmin.sky;
  * constants, so the scene stays in sync without streaming animation data.
  *
  * <pre>
- *   0  FIRST_CRACK  one barely visible crack in front of the target's eyes, growing slowly
- *  60  SPREAD       thin branches; new small cracks appear elsewhere
- * 180  CONNECT      the cracks join up, widen and deepen; the sky starts to glow
- * 240  CHIPS        small chips of glass pop out of the crack junctions
- * 270  FRAGMENTS    the first single fragments break away
- * 300  FALL         the dome gives way: shards fly outward and fall, the rift opens
+ *   0  PRESS        the sky is pressed in: the glass bows inward in front of the target, creaking
+ *  60  FIRST_CRACK  it snaps: a sharp star of cracks, and one great crack splits the whole sky
+ *  60  SPREAD       the cracks keep spreading and branching; new ones start elsewhere
+ * 200  CONNECT      the cracks join up, widen and deepen; light leaks through the great split
+ * 250  CHIPS        small chips of glass pop out of the crack junctions
+ * 275  FRAGMENTS    the first single fragments break away
+ * 300  FALL         the dome gives way with a roar: shards fall all the way down onto the world
  * 420  FREEZE       time stops locally
  * 450  HAND         the hand emerges from the depth of the rift
- * 530  GRAB         the fingers close one after another
+ * 530  GRAB         the target is caught where they are (they may run until now); the fingers
+ *                   close one after another
  * 560  LIFT         the hand pulls the target up into the rift
  * 620  TELEPORT     the target vanishes into the light
  * 640  RESTORE      200 ticks of reassembly: the rift contracts, shards return, cracks heal
  * </pre>
  */
 public final class SkyTimeline {
-    public static final int FIRST_CRACK = 0;
+    /** The visible part starts here: the glass is being pressed in. */
+    public static final int PRESS = 0;
+    /** The snap: the first sharp crack. */
+    public static final int FIRST_CRACK = 60;
     /** Kept for code that refers to the start of the visible part. */
-    public static final int GLOW = FIRST_CRACK;
+    public static final int GLOW = PRESS;
     public static final int CRACK = FIRST_CRACK;
-    public static final int SPREAD = 60;
-    public static final int CONNECT = 180;
-    public static final int CHIPS = 240;
-    public static final int FRAGMENTS = 270;
+    public static final int SPREAD = FIRST_CRACK;
+    public static final int CONNECT = 200;
+    public static final int CHIPS = 250;
+    public static final int FRAGMENTS = 275;
     /** Kept name: shards tremble from here on. */
     public static final int SHATTER = FRAGMENTS;
     public static final int FALL = 300;
@@ -46,7 +51,7 @@ public final class SkyTimeline {
     public static final int CRACKS_COMPLETE = CHIPS;
 
     public enum Phase {
-        HIDDEN, FIRST_CRACK, SPREAD, CONNECT, CHIPS, FRAGMENTS, FALL, FREEZE, HAND, GRAB, LIFT, GONE, RESTORE, DONE
+        HIDDEN, PRESS, FIRST_CRACK, CONNECT, CHIPS, FRAGMENTS, FALL, FREEZE, HAND, GRAB, LIFT, GONE, RESTORE, DONE
     }
 
     private SkyTimeline() {
@@ -69,8 +74,8 @@ public final class SkyTimeline {
         if (t >= FRAGMENTS) return Phase.FRAGMENTS;
         if (t >= CHIPS) return Phase.CHIPS;
         if (t >= CONNECT) return Phase.CONNECT;
-        if (t >= SPREAD) return Phase.SPREAD;
-        return Phase.FIRST_CRACK;
+        if (t >= FIRST_CRACK) return Phase.FIRST_CRACK;
+        return Phase.PRESS;
     }
 
     /** Clamped progress of {@code t} inside [from, to). */

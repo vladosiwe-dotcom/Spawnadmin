@@ -25,7 +25,7 @@ final class ServerSkyEvent {
     boolean aborted;
     boolean grantedFlight;
     float startYaw;
-    SkyTimeline.Phase lastPhase = SkyTimeline.Phase.FIRST_CRACK;
+    SkyTimeline.Phase lastPhase = SkyTimeline.Phase.PRESS;
 
     ServerSkyEvent(int id, ServerLevel level, long seed, Vec3 center, UUID target, int targetEntityId, long startTick) {
         this.id = id;

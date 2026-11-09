@@ -10,9 +10,10 @@ package com.spawnadmin.sky.geom;
  * @param cellA,cellB shards on both sides of a shell edge; for hairlines both equal the owner
  * @param hairline    true for fine branches inside a single shard
  * @param width       crack width in blocks
+ * @param main        part of the great crack that splits the whole sky in two
  */
 public record CrackSegment(V2 a, V2 b, double da, double db, double weight, int cellA, int cellB,
-                           boolean hairline, double width) {
+                           boolean hairline, double width, boolean main) {
 
     /**
      * Visible portion at front distance {@code front}. Returns {start fraction from a, end

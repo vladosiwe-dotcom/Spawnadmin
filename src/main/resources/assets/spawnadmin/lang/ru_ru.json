@@ -30,5 +30,8 @@
   "subtitles.spawnadmin.rift_open": "Небо раскрывается",
   "subtitles.spawnadmin.grab_close": "Смыкаются огромные пальцы",
   "subtitles.spawnadmin.lift_wind": "Рёв воздуха",
-  "subtitles.spawnadmin.vanish_flash": "Небесная вспышка"
+  "subtitles.spawnadmin.vanish_flash": "Небесная вспышка",
+  "subtitles.spawnadmin.glass_press": "Небо скрипит под давлением",
+  "subtitles.spawnadmin.glass_snap": "Небо трескается",
+  "subtitles.spawnadmin.glass_land": "Стекло разбивается о землю"
 }

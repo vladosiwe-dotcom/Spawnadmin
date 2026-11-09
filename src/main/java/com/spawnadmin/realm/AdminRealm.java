@@ -102,30 +102,73 @@ public final class AdminRealm {
 
     private static Vec3 prepareArrival(ServerLevel realm) {
         if (SpawnAdminConfig.BUILD_ARRIVAL_PLATFORM.get() && realm.dimension().equals(DEFAULT_REALM)
-                && realm.getBlockState(ARRIVAL.below()).isAir()) {
-            buildPlatform(realm);
+                && !realm.getBlockState(ISLAND_MARKER).is(Blocks.SHROOMLIGHT)) {
+            buildIsland(realm);
         }
         return Vec3.atBottomCenterOf(ARRIVAL);
     }
 
-    /** A round platform of white quartz with a ring of pale glass and soft lights. */
-    static void buildPlatform(ServerLevel level) {
-        BlockPos center = ARRIVAL.below();
-        BlockState floor = Blocks.SMOOTH_QUARTZ.defaultBlockState();
-        BlockState ring = Blocks.WHITE_STAINED_GLASS.defaultBlockState();
-        BlockState light = Blocks.SEA_LANTERN.defaultBlockState();
-        int radius = 10;
-        for (int dx = -radius - 1; dx <= radius + 1; dx++) {
-            for (int dz = -radius - 1; dz <= radius + 1; dz++) {
-                double d = Math.sqrt(dx * dx + dz * dz);
-                BlockPos p = center.offset(dx, 0, dz);
-                if (d <= radius - 0.5) {
-                    boolean lamp = (dx == 0 && dz == 0) || (Math.abs(d - 6) < 0.5 && (dx == 0 || dz == 0));
-                    level.setBlock(p, lamp ? light : floor, 3);
-                } else if (d <= radius + 0.6) {
-                    level.setBlock(p, ring, 3);
+    /** Marks an island of the current design (older platforms are rebuilt). */
+    static final BlockPos ISLAND_MARKER = ARRIVAL.below(2);
+
+    /**
+     * A bright floating island: a white quartz top lit by rings of sea lanterns, glowing pillars
+     * with end rods around it, a glass rim, and a luminous calcite cone beneath with glowstone
+     * and shroomlight veins. Combined with the realm's full ambient light it is bright from
+     * every side.
+     */
+    static void buildIsland(ServerLevel level) {
+        BlockPos top = ARRIVAL.below();
+        int radius = 14;
+        java.util.Random rnd = new java.util.Random(1108L);
+        // clear what an older platform left above the island
+        for (int dx = -radius - 2; dx <= radius + 2; dx++) {
+            for (int dz = -radius - 2; dz <= radius + 2; dz++) {
+                for (int dy = 0; dy <= 8; dy++) {
+                    BlockPos p = top.offset(dx, dy, dz);
+                    if (!level.getBlockState(p).isAir()) level.setBlock(p, Blocks.AIR.defaultBlockState(), 2);
                 }
             }
         }
+        BlockState quartz = Blocks.SMOOTH_QUARTZ.defaultBlockState();
+        BlockState lantern = Blocks.SEA_LANTERN.defaultBlockState();
+        BlockState rim = Blocks.WHITE_STAINED_GLASS.defaultBlockState();
+        for (int dx = -radius - 1; dx <= radius + 1; dx++) {
+            for (int dz = -radius - 1; dz <= radius + 1; dz++) {
+                double d = Math.sqrt(dx * dx + dz * dz);
+                BlockPos p = top.offset(dx, 0, dz);
+                if (d <= radius - 0.5) {
+                    boolean ring = Math.abs(d - 4) < 0.5 || Math.abs(d - 8.5) < 0.5 || Math.abs(d - 12.5) < 0.45;
+                    boolean cross = (dx == 0 || dz == 0) && d < 3;
+                    level.setBlock(p, ring || cross ? lantern : quartz, 2);
+                } else if (d <= radius + 0.6) {
+                    level.setBlock(p, rim, 2);
+                }
+            }
+        }
+        // the luminous cone beneath
+        for (int k = 1; k <= 11; k++) {
+            double r = (radius - 0.5) * Math.pow(1 - k / 12.0, 0.8);
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (Math.sqrt(dx * dx + dz * dz) > r) continue;
+                    double roll = rnd.nextDouble();
+                    BlockState b = roll < 0.16 ? Blocks.GLOWSTONE.defaultBlockState()
+                            : roll < 0.22 ? Blocks.SHROOMLIGHT.defaultBlockState()
+                            : roll < 0.6 ? Blocks.CALCITE.defaultBlockState() : Blocks.WHITE_CONCRETE.defaultBlockState();
+                    level.setBlock(top.offset(dx, -k, dz), b, 2);
+                }
+            }
+        }
+        // glowing pillars around the edge
+        for (int i = 0; i < 8; i++) {
+            double a = Math.PI * 2 * i / 8;
+            BlockPos base = top.offset((int) Math.round(Math.cos(a) * 10.5), 1, (int) Math.round(Math.sin(a) * 10.5));
+            level.setBlock(base, Blocks.QUARTZ_PILLAR.defaultBlockState(), 2);
+            level.setBlock(base.above(), Blocks.QUARTZ_PILLAR.defaultBlockState(), 2);
+            level.setBlock(base.above(2), Blocks.SEA_LANTERN.defaultBlockState(), 2);
+            level.setBlock(base.above(3), Blocks.END_ROD.defaultBlockState(), 2);
+        }
+        level.setBlock(ISLAND_MARKER, Blocks.SHROOMLIGHT.defaultBlockState(), 2);
     }
 }

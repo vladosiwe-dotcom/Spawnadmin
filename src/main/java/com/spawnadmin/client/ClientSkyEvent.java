@@ -50,7 +50,15 @@ final class ClientSkyEvent {
     /** The generated scene, or null while the background generation is still running. */
     SkyScene scene() {
         if (scene == null && pending.isDone() && !pending.isCompletedExceptionally()) {
-            scene = new SkyScene(pending.join());
+            // Shards land on the real terrain: ground height in the fracture frame, from the world.
+            scene = new SkyScene(pending.join(), (fx, fz) -> {
+                double wx = state.cx() + fx * cos - fz * sin, wz = state.cz() + fx * sin + fz * cos;
+                int bx = net.minecraft.util.Mth.floor(wx), bz = net.minecraft.util.Mth.floor(wz);
+                if (!level.hasChunk(bx >> 4, bz >> 4)) {
+                    return 0.0;
+                }
+                return level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, bx, bz) - state.cy();
+            });
             int n = scene.fracture.shards.size();
             poses = new SkyScene.ShardPose[n];
             for (int i = 0; i < n; i++) {
@@ -86,6 +94,24 @@ final class ClientSkyEvent {
         double x = p[0], z = p[2];
         p[0] = x * cos - z * sin;
         p[2] = x * sin + z * cos;
+    }
+
+    /**
+     * Where the hand is heading before the target is caught: the target's position, smoothed so
+     * the enormous hand follows a running player with weight instead of jittering after them.
+     */
+    V3 aim, aimPrev;
+
+    void updateAim(V3 target) {
+        aimPrev = aim == null ? target : aim;
+        aim = aim == null ? target : aim.lerp(target, 0.12);
+    }
+
+    V3 aim(float partial) {
+        if (aim == null) {
+            return lockLocal();
+        }
+        return aimPrev.lerp(aim, partial);
     }
 
     /** Lock position relative to the event center (world axes). */

@@ -5,6 +5,8 @@ package com.spawnadmin.sky.geom;
  * shard (fall, freeze, restore along the same timeline), but small, fast-spinning and many.
  */
 public final class DebrisData {
+    /** Position in {@link Fracture#debris}. */
+    public final int index;
     public final int parent;
     /** Rest position on the dome (relative to the event center) and its disc coordinate. */
     public final V3 origin;
@@ -24,8 +26,9 @@ public final class DebrisData {
      */
     public final double chipTime;
 
-    DebrisData(int parent, V3 origin, V2 disc, V3[] tri, V3 normal, double detachDelay, V3 velocity, V3 spinAxis,
+    DebrisData(int index, int parent, V3 origin, V2 disc, V3[] tri, V3 normal, double detachDelay, V3 velocity, V3 spinAxis,
                double spinSpeed, double restoreStart, double restoreLength, double chipTime) {
+        this.index = index;
         this.parent = parent;
         this.origin = origin;
         this.disc = disc;

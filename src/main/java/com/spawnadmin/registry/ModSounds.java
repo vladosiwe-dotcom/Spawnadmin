@@ -18,6 +18,9 @@ public final class ModSounds {
     public static final DeferredHolder<SoundEvent, SoundEvent> GRAB_TELEPORT = register("grab_teleport");
     public static final DeferredHolder<SoundEvent, SoundEvent> SKY_RESTORE = register("sky_restore");
     public static final DeferredHolder<SoundEvent, SoundEvent> FIRST_CRACK = register("first_crack");
+    public static final DeferredHolder<SoundEvent, SoundEvent> GLASS_PRESS = register("glass_press");
+    public static final DeferredHolder<SoundEvent, SoundEvent> GLASS_SNAP = register("glass_snap");
+    public static final DeferredHolder<SoundEvent, SoundEvent> GLASS_LAND = register("glass_land");
     public static final DeferredHolder<SoundEvent, SoundEvent> RIFT_OPEN = register("rift_open");
     public static final DeferredHolder<SoundEvent, SoundEvent> GRAB_CLOSE = register("grab_close");
     public static final DeferredHolder<SoundEvent, SoundEvent> LIFT_WIND = register("lift_wind");
