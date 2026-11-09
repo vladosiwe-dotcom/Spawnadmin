@@ -2,6 +2,7 @@ package com.spawnadmin.gametest;
 
 import com.spawnadmin.SpawnAdmin;
 import com.spawnadmin.SpawnAdminConfig;
+import com.spawnadmin.item.HeavenHornItem;
 import com.spawnadmin.realm.AdminRealm;
 import com.spawnadmin.registry.ModAttachments;
 import com.spawnadmin.registry.ModItems;
@@ -120,20 +121,58 @@ public final class HeavenlySummoningTests {
     }
 
     @GameTest(template = "empty", timeoutTicks = 60)
-    public static void hornTakesThePlayerItIsPointedAt(GameTestHelper helper) {
-        ServerPlayer admin = helper.makeMockServerPlayerInLevel();
-        ServerPlayer victim = helper.makeMockServerPlayerInLevel();
+    public static void hornAlwaysCallsTheOneWhoBlowsIt(GameTestHelper helper) {
+        allowParallel();
+        ServerPlayer blower = helper.makeMockServerPlayerInLevel();
+        ServerPlayer other = helper.makeMockServerPlayerInLevel();
         Vec3 a = helper.absoluteVec(new Vec3(1.5, 2, 1.5));
         Vec3 v = helper.absoluteVec(new Vec3(1.5, 2, 4.5));
-        victim.moveTo(v.x, v.y, v.z, 0f, 0f);
-        // look straight at the victim (+Z = yaw 0)
-        admin.moveTo(a.x, a.y, a.z, 0f, 0f);
-        admin.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(ModItems.HEAVEN_HORN.get()));
-        ModItems.HEAVEN_HORN.get().use(helper.getLevel(), admin, InteractionHand.MAIN_HAND);
-        helper.assertTrue(SkyEventManager.isBusy(victim), "the heavens come for the player the horn points at");
-        helper.assertFalse(SkyEventManager.isBusy(admin), "not for the one who blew it");
-        SkyEventManager.cancel(victim);
+        other.moveTo(v.x, v.y, v.z, 0f, 0f);
+        blower.moveTo(a.x, a.y, a.z, 0f, 0f); // looking straight at the other player
+        blower.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(ModItems.HEAVEN_HORN.get()));
+        ModItems.HEAVEN_HORN.get().use(helper.getLevel(), blower, InteractionHand.MAIN_HAND);
+        helper.assertTrue(SkyEventManager.isBusy(blower), "the heavens come for the one who blew the horn");
+        helper.assertFalse(SkyEventManager.isBusy(other), "never for someone else");
+        SkyEventManager.cancel(blower);
         helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 60)
+    public static void restingHornDoesNothingUntilReady(GameTestHelper helper) {
+        allowParallel();
+        ServerPlayer player = helper.makeMockServerPlayerInLevel();
+        Vec3 at = helper.absoluteVec(new Vec3(2.5, 2, 2.5));
+        player.moveTo(at.x, at.y, at.z, 0f, -90f);
+        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(ModItems.HEAVEN_HORN.get()));
+        player.setData(ModAttachments.HORN_READY_AT.get(), System.currentTimeMillis() + 3_600_000L);
+        ModItems.HEAVEN_HORN.get().use(helper.getLevel(), player, InteractionHand.MAIN_HAND);
+        helper.assertFalse(SkyEventManager.isBusy(player), "a resting horn calls nobody");
+        helper.assertTrue(HeavenHornItem.remainingRestMillis(player) > 3_500_000L, "the rest is kept");
+        HeavenHornItem.resetRest(player);
+        player.getCooldowns().removeCooldown(ModItems.HEAVEN_HORN.get());
+        ModItems.HEAVEN_HORN.get().use(helper.getLevel(), player, InteractionHand.MAIN_HAND);
+        helper.assertTrue(SkyEventManager.isBusy(player), "after the rest it works again");
+        SkyEventManager.cancel(player);
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = HIDDEN + SkyTimeline.TELEPORT + 60)
+    public static void hornRestsFiveHoursAfterCarryingThePlayer(GameTestHelper helper) {
+        ensureRealm(helper);
+        ServerPlayer player = helper.makeMockServerPlayerInLevel();
+        Vec3 at = helper.absoluteVec(new Vec3(2.5, 2, 2.5));
+        player.moveTo(at.x, at.y, at.z, 0f, -90f);
+        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(ModItems.HEAVEN_HORN.get()));
+        ModItems.HEAVEN_HORN.get().use(helper.getLevel(), player, InteractionHand.MAIN_HAND);
+        helper.assertTrue(HeavenHornItem.remainingRestMillis(player) == 0, "no rest before the horn has carried anyone");
+        int delay = SpawnAdminConfig.HIDDEN_DELAY_SECONDS.get() * 20;
+        helper.runAfterDelay(delay + SkyTimeline.TELEPORT + 10, () -> {
+            helper.assertTrue(AdminRealm.isInRealm(player), "carried into the realm");
+            long rest = HeavenHornItem.remainingRestMillis(player);
+            helper.assertTrue(rest > SpawnAdminConfig.HORN_REST_MINUTES.get() * 60_000L - 60_000L, "the horn now rests: " + rest);
+            AdminRealm.leave(player);
+            helper.succeed();
+        });
     }
 
     @GameTest(template = "empty", timeoutTicks = SkyTimeline.FREEZE + 120)
@@ -173,6 +212,56 @@ public final class HeavenlySummoningTests {
         }
         AdminRealm.leave(player);
         helper.assertTrue(player.level() == helper.getLevel() && player.position().distanceTo(start) < 2.0, "back home");
+        helper.succeed();
+    }
+
+    // ------------------------------------------------------------------ realm: banishing, leaving
+    // A separate batch: it moves everyone in the realm and must not disturb the other tests.
+
+    @GameTest(template = "empty", batch = "realm_exclusive")
+    public static void sealSendsEveryoneButOperatorsHome(GameTestHelper helper) {
+        ensureRealm(helper);
+        var server = helper.getLevel().getServer();
+        ServerPlayer admin = helper.makeMockServerPlayerInLevel();
+        ServerPlayer guest = helper.makeMockServerPlayerInLevel();
+        Vec3 home = helper.absoluteVec(new Vec3(3.5, 2, 3.5));
+        guest.moveTo(home);
+        admin.moveTo(helper.absoluteVec(new Vec3(1.5, 2, 1.5)));
+        helper.assertTrue(AdminRealm.enter(guest) && AdminRealm.enter(admin), "both in the realm");
+        admin.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(ModItems.BANISHING_SEAL.get()));
+
+        ModItems.BANISHING_SEAL.get().use(admin.level(), admin, InteractionHand.MAIN_HAND);
+        helper.assertTrue(AdminRealm.isInRealm(guest), "the seal does not obey a non-operator");
+
+        // The GameTest server gives /op level 0, so the entry is added with an explicit level.
+        server.getPlayerList().getOps().add(new net.minecraft.server.players.ServerOpListEntry(admin.getGameProfile(), 4, false));
+        try {
+            helper.assertTrue(admin.hasPermissions(2), "the admin is an operator now");
+            admin.getCooldowns().removeCooldown(ModItems.BANISHING_SEAL.get());
+            ModItems.BANISHING_SEAL.get().use(admin.level(), admin, InteractionHand.MAIN_HAND);
+            helper.assertFalse(AdminRealm.isInRealm(guest), "the guest is banished");
+            helper.assertTrue(guest.level() == helper.getLevel() && guest.position().distanceTo(home) < 2.0,
+                    "back where they were taken from");
+            helper.assertTrue(AdminRealm.isInRealm(admin), "the operator stays");
+        } finally {
+            server.getPlayerList().getOps().remove(admin.getGameProfile());
+            AdminRealm.leave(admin);
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", batch = "realm_exclusive")
+    public static void anyPlayerCanLeaveWithTheCommand(GameTestHelper helper) {
+        ensureRealm(helper);
+        ServerPlayer guest = helper.makeMockServerPlayerInLevel();
+        Vec3 home = helper.absoluteVec(new Vec3(2.5, 2, 2.5));
+        guest.moveTo(home);
+        helper.assertTrue(AdminRealm.enter(guest), "in the realm");
+        helper.assertFalse(guest.hasPermissions(2), "an ordinary player");
+        guest.server.getCommands().performPrefixedCommand(guest.createCommandSourceStack(), "heaven leave");
+        helper.assertFalse(AdminRealm.isInRealm(guest), "left the realm");
+        helper.assertTrue(guest.level() == helper.getLevel() && guest.position().distanceTo(home) < 2.0,
+                "back where the hand took them");
         helper.succeed();
     }
 }

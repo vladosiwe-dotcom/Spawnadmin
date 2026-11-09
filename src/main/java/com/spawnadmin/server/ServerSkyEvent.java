@@ -24,6 +24,8 @@ final class ServerSkyEvent {
     boolean teleported;
     boolean aborted;
     boolean grantedFlight;
+    /** Started by the horn (not by a command): arriving starts the horn's rest. */
+    boolean fromHorn;
     float startYaw;
     SkyTimeline.Phase lastPhase = SkyTimeline.Phase.PRESS;
 

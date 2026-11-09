@@ -2,6 +2,7 @@ package com.spawnadmin.item;
 
 import com.spawnadmin.SpawnAdminConfig;
 import com.spawnadmin.realm.AdminRealm;
+import com.spawnadmin.registry.ModAttachments;
 import com.spawnadmin.registry.ModSounds;
 import com.spawnadmin.server.SkyEventManager;
 import net.minecraft.ChatFormatting;
@@ -18,20 +19,22 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.UseAnim;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
 
 /**
- * Horn of the Heavens. Pointed at a player, it calls the heavens upon them: after a silent wait
- * the sky cracks, breaks open and a hand of light carries them away into the administrator's
- * realm. Pointed at nobody, it summons the one who blew it. The realm can only be entered through
- * the full animation; there is no shortcut. Inside the realm it sends the player back.
+ * Horn of the Heavens. The one who blows it calls the heavens upon themselves: after a silent
+ * wait the sky cracks, breaks open and a hand of light carries them into the administrator's
+ * realm. It can only be entered through the full animation; there is no shortcut. Once the
+ * horn has carried a player there, it rests for {@link SpawnAdminConfig#HORN_REST_MINUTES}
+ * (5 hours by default, real time, saved with the player). Inside the realm it sends the player
+ * back to where the hand took them, at any time.
  */
 public class HeavenHornItem extends Item {
     private static final int USE_TICKS = 60;
     private static final int RETURN_COOLDOWN = 40;
-    private static final double TARGET_RANGE = 128.0;
+    /** Short pause after every blow, so the horn is not spammed. */
+    private static final int BLOW_COOLDOWN = 60;
 
     public HeavenHornItem(Properties properties) {
         super(properties);
@@ -51,49 +54,50 @@ public class HeavenHornItem extends Item {
             level.playSound(null, sp.getX(), sp.getY(), sp.getZ(), ModSounds.GRAB_TELEPORT.get(), SoundSource.PLAYERS, 1.0f, 1.2f);
             return InteractionResultHolder.success(stack);
         }
-        // The heavens take the player the horn is pointed at; with nobody in sight, the blower.
-        ServerPlayer target = lookedAtPlayer(sp, TARGET_RANGE);
-        if (target == null) {
-            target = sp;
-        }
-        if (SkyEventManager.isBusy(target) || AdminRealm.isInRealm(target)) {
+        if (SkyEventManager.isBusy(sp)) {
             sp.displayClientMessage(Component.translatable("message.spawnadmin.already_heard"), true);
             return InteractionResultHolder.fail(stack);
         }
+        long rest = remainingRestMillis(sp);
+        if (rest > 0) {
+            sp.displayClientMessage(Component.translatable("message.spawnadmin.horn_resting", formatRest(rest))
+                    .withStyle(ChatFormatting.GRAY), true);
+            sp.getCooldowns().addCooldown(this, 20);
+            return InteractionResultHolder.fail(stack);
+        }
+        // The heavens come for the one who blew the horn.
         player.startUsingItem(hand);
         level.playSound(null, sp.getX(), sp.getY(), sp.getZ(), ModSounds.HEAVEN_HORN.get(), SoundSource.PLAYERS, 8.0f, 1.0f);
-        SkyEventManager.scheduleSummon(target, sp);
-        if (target != sp) {
-            sp.displayClientMessage(Component.translatable("message.spawnadmin.heard_target", target.getDisplayName()), true);
-        }
-        sp.getCooldowns().addCooldown(this, SpawnAdminConfig.HORN_COOLDOWN_SECONDS.get() * 20);
+        SkyEventManager.scheduleSummon(sp, sp);
+        sp.getCooldowns().addCooldown(this, BLOW_COOLDOWN);
         sp.awardStat(Stats.ITEM_USED.get(this));
         return InteractionResultHolder.consume(stack);
     }
 
-    /** The player closest to the line of sight (within a few degrees), visible and in range. */
-    static ServerPlayer lookedAtPlayer(ServerPlayer caller, double range) {
-        Vec3 eye = caller.getEyePosition();
-        Vec3 look = caller.getLookAngle();
-        ServerPlayer best = null;
-        double bestAngle = Double.MAX_VALUE;
-        for (ServerPlayer other : caller.serverLevel().players()) {
-            if (other == caller || !other.isAlive() || other.isSpectator()) {
-                continue;
-            }
-            Vec3 to = other.getBoundingBox().getCenter().subtract(eye);
-            double dist = to.length();
-            if (dist > range || dist < 1e-3) {
-                continue;
-            }
-            double angle = Math.acos(Math.max(-1, Math.min(1, to.normalize().dot(look))));
-            double tolerance = Math.atan(1.6 / dist) + Math.toRadians(2);
-            if (angle <= tolerance && angle < bestAngle && caller.hasLineOfSight(other)) {
-                best = other;
-                bestAngle = angle;
-            }
+    /** How long the horn still rests for this player (0 when it is ready). */
+    public static long remainingRestMillis(ServerPlayer player) {
+        return Math.max(0L, player.getData(ModAttachments.HORN_READY_AT.get()) - System.currentTimeMillis());
+    }
+
+    /** Starts the rest: called when the horn has carried the player into the realm. */
+    public static void startRest(ServerPlayer player) {
+        long ms = SpawnAdminConfig.HORN_REST_MINUTES.get() * 60_000L;
+        player.setData(ModAttachments.HORN_READY_AT.get(), System.currentTimeMillis() + ms);
+    }
+
+    public static void resetRest(ServerPlayer player) {
+        player.removeData(ModAttachments.HORN_READY_AT.get());
+    }
+
+    /** "4 h 12 min" style, in the player's language. */
+    public static Component formatRest(long ms) {
+        long minutes = Math.max(1, (ms + 59_999) / 60_000);
+        long hours = minutes / 60;
+        minutes %= 60;
+        if (hours > 0) {
+            return Component.translatable("message.spawnadmin.time_hm", hours, minutes);
         }
-        return best;
+        return Component.translatable("message.spawnadmin.time_m", minutes);
     }
 
     @Override
@@ -110,5 +114,6 @@ public class HeavenHornItem extends Item {
     public void appendHoverText(ItemStack stack, TooltipContext context, List<Component> tooltip, TooltipFlag flag) {
         tooltip.add(Component.translatable("item.spawnadmin.heaven_horn.desc1").withStyle(ChatFormatting.GRAY, ChatFormatting.ITALIC));
         tooltip.add(Component.translatable("item.spawnadmin.heaven_horn.desc2").withStyle(ChatFormatting.AQUA));
+        tooltip.add(Component.translatable("item.spawnadmin.heaven_horn.desc3").withStyle(ChatFormatting.DARK_GRAY));
     }
 }

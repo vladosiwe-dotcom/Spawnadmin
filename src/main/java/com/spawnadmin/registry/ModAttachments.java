@@ -16,6 +16,13 @@ public final class ModAttachments {
     public static final Supplier<AttachmentType<ReturnPoint>> RETURN_POINT = ATTACHMENTS.register("return_point",
             () -> AttachmentType.builder(() -> ReturnPoint.EMPTY).serialize(ReturnPoint.CODEC).copyOnDeath().build());
 
+    /**
+     * Real time (epoch milliseconds) from which the Horn of the Heavens may carry this player
+     * into the realm again. Saved with the player, so neither a relog nor a restart resets it.
+     */
+    public static final Supplier<AttachmentType<Long>> HORN_READY_AT = ATTACHMENTS.register("horn_ready_at",
+            () -> AttachmentType.builder(() -> 0L).serialize(com.mojang.serialization.Codec.LONG).copyOnDeath().build());
+
     private ModAttachments() {
     }
 }

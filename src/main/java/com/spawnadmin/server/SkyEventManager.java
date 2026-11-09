@@ -136,6 +136,7 @@ public final class SkyEventManager {
         ServerSkyEvent event = new ServerSkyEvent(nextId++, level, seed, player.position(),
                 player.getUUID(), player.getId(), level.getGameTime());
         event.startYaw = player.getYRot();
+        event.fromHorn = pending != null;
         EVENTS.put(event.id, event);
         broadcast(event);
         SpawnAdmin.LOGGER.info("Heavenly Summoning #{} started for {} in {}", event.id, player.getName().getString(),
@@ -332,6 +333,10 @@ public final class SkyEventManager {
         target.noPhysics = false;
         Vec3 takenFrom = event.lockPos != null ? event.lockPos : event.center;
         if (AdminRealm.enter(target, takenFrom)) {
+            if (event.fromHorn) {
+                // The horn has done its work: it rests before it can carry this player again.
+                com.spawnadmin.item.HeavenHornItem.startRest(target);
+            }
             SpawnAdmin.LOGGER.info("Heavenly Summoning #{} carried {} to {}", event.id, target.getName().getString(),
                     AdminRealm.realmKey().location());
         } else {

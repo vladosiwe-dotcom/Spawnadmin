@@ -22,6 +22,11 @@ import java.util.function.Predicate;
  * /heaven exit [players]   – back to the saved return point
  * /heaven return <players> – send the named players back to the spot where the hand took them
  * /heaven cancel [players] – abort events (in this dimension, or of the given players)
+ * /heaven leave            – for every player: leave the realm, back to where the hand took you
+ * /heaven banish           – send everyone but operators out of the realm (like the Seal)
+ * /heaven resetcooldown <players> – let the horn carry these players again right away
+ *
+ * Everything except {@code leave} needs permission level 2 (operator).
  */
 public final class HeavenCommand {
     private HeavenCommand() {
@@ -33,19 +38,47 @@ public final class HeavenCommand {
 
     static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("heaven")
-                .requires(src -> src.hasPermission(2))
+                .then(Commands.literal("leave")
+                        .executes(ctx -> {
+                            ServerPlayer player = ctx.getSource().getPlayerOrException();
+                            if (!exit(player)) {
+                                ctx.getSource().sendFailure(Component.translatable("commands.spawnadmin.leave.failed"));
+                                return 0;
+                            }
+                            player.playNotifySound(com.spawnadmin.registry.ModSounds.GRAB_TELEPORT.get(),
+                                    net.minecraft.sounds.SoundSource.PLAYERS, 1.0f, 1.2f);
+                            return 1;
+                        }))
+                .then(Commands.literal("banish")
+                        .requires(src -> src.hasPermission(2))
+                        .executes(ctx -> {
+                            int n = com.spawnadmin.item.BanishingSealItem.banishAll(ctx.getSource().getServer());
+                            ctx.getSource().sendSuccess(() -> Component.translatable("message.spawnadmin.banished", n), true);
+                            return n;
+                        }))
+                .then(Commands.literal("resetcooldown")
+                        .requires(src -> src.hasPermission(2))
+                        .then(Commands.argument("targets", EntityArgument.players())
+                                .executes(ctx -> run(ctx, EntityArgument.getPlayers(ctx, "targets"), p -> {
+                                    com.spawnadmin.item.HeavenHornItem.resetRest(p);
+                                    return true;
+                                }, "resetcooldown"))))
                 .then(Commands.literal("enter")
+                        .requires(src -> src.hasPermission(2))
                         .executes(ctx -> run(ctx, List.of(ctx.getSource().getPlayerOrException()), SkyEventManager::startNow, "enter"))
                         .then(Commands.argument("targets", EntityArgument.players())
                                 .executes(ctx -> run(ctx, EntityArgument.getPlayers(ctx, "targets"), SkyEventManager::startNow, "enter"))))
                 .then(Commands.literal("exit")
+                        .requires(src -> src.hasPermission(2))
                         .executes(ctx -> run(ctx, List.of(ctx.getSource().getPlayerOrException()), HeavenCommand::exit, "exit"))
                         .then(Commands.argument("targets", EntityArgument.players())
                                 .executes(ctx -> run(ctx, EntityArgument.getPlayers(ctx, "targets"), HeavenCommand::exit, "exit"))))
                 .then(Commands.literal("return")
+                        .requires(src -> src.hasPermission(2))
                         .then(Commands.argument("targets", EntityArgument.players())
                                 .executes(ctx -> run(ctx, EntityArgument.getPlayers(ctx, "targets"), HeavenCommand::exit, "return"))))
                 .then(Commands.literal("cancel")
+                        .requires(src -> src.hasPermission(2))
                         .executes(ctx -> {
                             int n = SkyEventManager.cancelAll(ctx.getSource().getLevel());
                             ctx.getSource().sendSuccess(() -> Component.translatable("commands.spawnadmin.cancel", n), true);

@@ -1,7 +1,7 @@
 {
   "item.spawnadmin.heaven_horn": "Рог Небес",
-  "item.spawnadmin.heaven_horn.desc1": "Направь на игрока и протруби. Небо придёт за ним.",
-  "item.spawnadmin.heaven_horn.desc2": "В измерении администратора возвращает домой.",
+  "item.spawnadmin.heaven_horn.desc1": "Протруби, и небо придёт за тобой.",
+  "item.spawnadmin.heaven_horn.desc2": "В измерении администратора возвращает туда, где забрала рука.",
   "message.spawnadmin.already_heard": "Небеса уже услышали тебя...",
   "message.spawnadmin.already_in_realm": "Ты уже за пределами неба.",
   "message.spawnadmin.sky_busy": "Небо здесь уже раскалывается. Попробуй позже.",
@@ -25,7 +25,6 @@
   "subtitles.spawnadmin.clock_halt": "Часы останавливаются",
   "commands.spawnadmin.return": "Возвращено туда, откуда забрали: %s",
   "commands.spawnadmin.return.failed": "Некого возвращать: игрок не в измерении администратора",
-  "message.spawnadmin.heard_target": "Небеса услышали. Они придут за %s.",
   "subtitles.spawnadmin.first_crack": "Где-то наверху треснуло стекло",
   "subtitles.spawnadmin.rift_open": "Небо раскрывается",
   "subtitles.spawnadmin.grab_close": "Смыкаются огромные пальцы",
@@ -36,5 +35,18 @@
   "subtitles.spawnadmin.glass_land": "Стекло разбивается о землю",
   "subtitles.spawnadmin.cine_hit": "Мир темнеет",
   "subtitles.spawnadmin.cine_riser": "Что-то набирает воздух",
-  "subtitles.spawnadmin.leash_pull": "Что-то тянет назад"
+  "subtitles.spawnadmin.leash_pull": "Что-то тянет назад",
+  "item.spawnadmin.heaven_horn.desc3": "После перехода отдыхает 5 часов.",
+  "item.spawnadmin.banishing_seal": "Печать Изгнания",
+  "item.spawnadmin.banishing_seal.desc1": "Только для оператора.",
+  "item.spawnadmin.banishing_seal.desc2": "Изгоняет из измерения администратора всех, кроме операторов.",
+  "message.spawnadmin.horn_resting": "Рог Небес отдыхает. Осталось: %s",
+  "message.spawnadmin.time_hm": "%s ч %s мин",
+  "message.spawnadmin.time_m": "%s мин",
+  "message.spawnadmin.seal_refuses": "Печать не слушается тебя.",
+  "message.spawnadmin.banished": "Изгнано из измерения: %s",
+  "message.spawnadmin.you_were_banished": "Тебя изгнали из измерения администратора.",
+  "commands.spawnadmin.leave.failed": "Ты не в измерении администратора.",
+  "commands.spawnadmin.resetcooldown": "Рог снова готов для игроков: %s",
+  "commands.spawnadmin.resetcooldown.failed": "Некому сбрасывать"
 }

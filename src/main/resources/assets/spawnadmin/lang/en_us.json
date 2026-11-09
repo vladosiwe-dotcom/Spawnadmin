@@ -1,7 +1,7 @@
 {
   "item.spawnadmin.heaven_horn": "Horn of the Heavens",
-  "item.spawnadmin.heaven_horn.desc1": "Point it at a player and blow. The sky will come for them.",
-  "item.spawnadmin.heaven_horn.desc2": "Inside the Administrator's Realm: returns you home.",
+  "item.spawnadmin.heaven_horn.desc1": "Blow it, and the sky will come for you.",
+  "item.spawnadmin.heaven_horn.desc2": "In the administrator's realm it takes you back to where the hand took you.",
   "message.spawnadmin.already_heard": "The heavens have already heard you...",
   "message.spawnadmin.already_in_realm": "You are already beyond the sky.",
   "message.spawnadmin.sky_busy": "The sky here is already breaking. Try again later.",
@@ -25,7 +25,6 @@
   "subtitles.spawnadmin.clock_halt": "The clock stops",
   "commands.spawnadmin.return": "Sent %s player(s) back to where they were taken",
   "commands.spawnadmin.return.failed": "Nobody to send back: the player is not in the realm",
-  "message.spawnadmin.heard_target": "The heavens have heard. They will come for %s.",
   "subtitles.spawnadmin.first_crack": "Glass cracks somewhere above",
   "subtitles.spawnadmin.rift_open": "The sky opens",
   "subtitles.spawnadmin.grab_close": "Giant fingers close",
@@ -36,5 +35,18 @@
   "subtitles.spawnadmin.glass_land": "Glass smashes on the ground",
   "subtitles.spawnadmin.cine_hit": "The world darkens",
   "subtitles.spawnadmin.cine_riser": "Something draws in its breath",
-  "subtitles.spawnadmin.leash_pull": "Something pulls you back"
+  "subtitles.spawnadmin.leash_pull": "Something pulls you back",
+  "item.spawnadmin.heaven_horn.desc3": "Rests 5 hours after carrying you over.",
+  "item.spawnadmin.banishing_seal": "Seal of Banishment",
+  "item.spawnadmin.banishing_seal.desc1": "Operators only.",
+  "item.spawnadmin.banishing_seal.desc2": "Sends everyone but operators out of the administrator's realm.",
+  "message.spawnadmin.horn_resting": "The Horn of the Heavens is resting. Time left: %s",
+  "message.spawnadmin.time_hm": "%s h %s min",
+  "message.spawnadmin.time_m": "%s min",
+  "message.spawnadmin.seal_refuses": "The seal does not obey you.",
+  "message.spawnadmin.banished": "Banished from the realm: %s",
+  "message.spawnadmin.you_were_banished": "You were banished from the administrator's realm.",
+  "commands.spawnadmin.leave.failed": "You are not in the administrator's realm.",
+  "commands.spawnadmin.resetcooldown": "The horn is ready again for players: %s",
+  "commands.spawnadmin.resetcooldown.failed": "Nobody to reset"
 }
