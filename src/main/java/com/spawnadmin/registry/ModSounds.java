@@ -29,6 +29,12 @@ public final class ModSounds {
     public static final DeferredHolder<SoundEvent, SoundEvent> CLOCK_TOCK = register("clock_tock");
     public static final DeferredHolder<SoundEvent, SoundEvent> HOUR_STRIKE = register("hour_strike");
     public static final DeferredHolder<SoundEvent, SoundEvent> CLOCK_HALT = register("clock_halt");
+    /** A deep, wide hit as the world dims at the start of the scene. */
+    public static final DeferredHolder<SoundEvent, SoundEvent> CINE_HIT = register("cine_hit");
+    /** A reversed swell that ends exactly on the snap. */
+    public static final DeferredHolder<SoundEvent, SoundEvent> CINE_RISER = register("cine_riser");
+    /** The runaway target being dragged back. */
+    public static final DeferredHolder<SoundEvent, SoundEvent> LEASH_PULL = register("leash_pull");
     /** Minimal score of the event, 28 s, aligned to the timeline from the GLOW tick. */
     public static final DeferredHolder<SoundEvent, SoundEvent> THEME_SUMMONING = register("theme_summoning");
     /** Quiet ambient music of the administrator's realm. */

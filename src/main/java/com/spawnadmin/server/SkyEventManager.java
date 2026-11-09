@@ -49,6 +49,10 @@ import java.util.UUID;
 public final class SkyEventManager {
     /** Running further than this from the (fixed) rift before being caught breaks the summoning. */
     public static final double ESCAPE_RADIUS = 200.0;
+    /** The target may move this far from where they stood; beyond it they are pulled back (client side). */
+    public static final double LEASH_RADIUS = 10.0;
+    /** Beyond this (an ender pearl, a fast mount, a client ignoring the pull) the server drags them back at once. */
+    public static final double LEASH_HARD = 36.0;
 
     private static double horizontal(Vec3 a, Vec3 b) {
         return Math.hypot(a.x - b.x, a.z - b.z);
@@ -261,6 +265,8 @@ public final class SkyEventManager {
                 abort(event, "target was teleported away");
             } else if (event.lockPos == null && horizontal(target.position(), event.center) > ESCAPE_RADIUS) {
                 abort(event, "target escaped the sky");
+            } else if (event.lockPos == null && t < SkyTimeline.GRAB && horizontal(target.position(), event.center) > LEASH_HARD) {
+                pullBack(event, target);
             }
         }
 
@@ -289,6 +295,23 @@ public final class SkyEventManager {
             broadcast(event);
         }
         return t >= event.restoreAt + SkyTimeline.RESTORE_LENGTH;
+    }
+
+    /** Something unseen drags the runaway back to the edge of the leash, facing the rift. */
+    private static void pullBack(ServerSkyEvent event, ServerPlayer target) {
+        Vec3 off = target.position().subtract(event.center);
+        double h = Math.hypot(off.x, off.z);
+        double k = (LEASH_RADIUS + 2) / Math.max(h, 1e-6);
+        double x = event.center.x + off.x * k, z = event.center.z + off.z * k;
+        int top = event.level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                net.minecraft.util.Mth.floor(x), net.minecraft.util.Mth.floor(z));
+        double y = Math.max(top, Math.min(target.getY(), event.center.y + 4));
+        target.stopRiding();
+        target.connection.teleport(x, y, z, target.getYRot(), target.getXRot());
+        target.setDeltaMovement(Vec3.ZERO);
+        target.resetFallDistance();
+        target.playNotifySound(ModSounds.LEASH_PULL.get(), SoundSource.PLAYERS, 1.0f, 0.8f);
+        SpawnAdmin.LOGGER.info("Heavenly Summoning #{}: {} pulled back", event.id, target.getName().getString());
     }
 
     private static void lockTarget(ServerSkyEvent event, ServerPlayer target) {

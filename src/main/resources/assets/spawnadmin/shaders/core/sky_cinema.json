@@ -1,0 +1,14 @@
+{
+  "vertex": "spawnadmin:sky_fullscreen",
+  "fragment": "spawnadmin:sky_cinema",
+  "samplers": [
+    { "name": "Sampler0" }
+  ],
+  "uniforms": [
+    { "name": "ScreenSize", "type": "float", "count": 2, "values": [1.0, 1.0] },
+    { "name": "Grade", "type": "float", "count": 4, "values": [0.0, 0.0, 0.0, 0.0] },
+    { "name": "Flare", "type": "float", "count": 4, "values": [0.5, 0.5, 0.0, 1.0] },
+    { "name": "Ring", "type": "float", "count": 4, "values": [0.0, 0.0, 0.0, 0.0] },
+    { "name": "Fx", "type": "float", "count": 4, "values": [0.0, 0.0, 0.0, 0.0] }
+  ]
+}

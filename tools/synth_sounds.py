@@ -284,7 +284,6 @@ def restore():
 
 
 SOUNDS = {
-    "heaven_horn": horn,
     "first_crack": first_crack,
     "rift_open": rift_open,
     "grab_close": grab_close,

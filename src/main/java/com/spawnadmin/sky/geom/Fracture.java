@@ -35,9 +35,12 @@ public final class Fracture {
     public static final double IMPACT_RADIUS = 0.66;
     /** Real-time progress (fraction of the crack growth) at which the secondary cracks start. */
     private static final double[] SECONDARY_STARTS = {0.17, 0.27, 0.38, 0.5};
-    /** The great split runs across the sky from this fraction of the crack growth, for this long. */
-    public static final double SPLIT_START = 0.09;
-    public static final double SPLIT_RUN = 0.06;
+    /**
+     * The great split runs across the sky from this fraction of the crack growth, for this long:
+     * it creeps, about 3 s from the impact to the far rim, instead of appearing at once.
+     */
+    public static final double SPLIT_START = 0.10;
+    public static final double SPLIT_RUN = 0.30;
     /** Exponent of the crack-front clock: slow, hesitant start, accelerating spread. */
     public static final double FRONT_EXPONENT = 2.2;
     private static final int RIM_SEGMENTS = 96;

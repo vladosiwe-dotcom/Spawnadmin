@@ -33,5 +33,8 @@
   "subtitles.spawnadmin.vanish_flash": "A flash of heaven",
   "subtitles.spawnadmin.glass_press": "The sky creaks under pressure",
   "subtitles.spawnadmin.glass_snap": "The sky snaps",
-  "subtitles.spawnadmin.glass_land": "Glass smashes on the ground"
+  "subtitles.spawnadmin.glass_land": "Glass smashes on the ground",
+  "subtitles.spawnadmin.cine_hit": "The world darkens",
+  "subtitles.spawnadmin.cine_riser": "Something draws in its breath",
+  "subtitles.spawnadmin.leash_pull": "Something pulls you back"
 }

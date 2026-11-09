@@ -45,6 +45,10 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
     private SoundInstance lingeringTheme;
     private int idleTicks;
     private final java.util.Set<Integer> gripPlayed = new java.util.HashSet<>();
+    /** The reverse swell is timed to end exactly on the snap (its length is 2.5 s). */
+    private static final int RISER_AT = SkyTimeline.FIRST_CRACK - 50;
+    /** Strength of the pull felt by the local player (0..1), eased for the screen warp. */
+    private float pull, pullPrev, pullGoal;
 
     private ClientSkyEvents() {
     }
@@ -78,6 +82,7 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
             event = new ClientSkyEvent(payload, level, fracture);
             // A late joiner starts silently in whatever phase is running.
             event.lastPhase = SkyTimeline.phaseAt(event.time(0), payload.restoreAt());
+            event.riserPlayed = event.time(0) > RISER_AT + 10;
             events.put(payload.id(), event);
         } else {
             event.state = payload;
@@ -93,6 +98,7 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
         if (event != null) {
             stopTheme(event);
         }
+        Cinema.forget(payload.id());
         gripPlayed.remove(payload.id());
     }
 
@@ -103,6 +109,7 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
         gripPlayed.clear();
         SceneCopy.release();
         ScreenFlash.clear();
+        pull = pullPrev = pullGoal = 0;
         hudHiddenUntil = 0;
         lingeringTheme = null;
     }
@@ -225,6 +232,33 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
         return 1.0 + 0.32 * SkyScene.smooth(SkyTimeline.progress(t, SkyTimeline.LIFT + 10, SkyTimeline.TELEPORT));
     }
 
+    /** Screen warp while the local player is being dragged back. */
+    double pullWarp(float partial) {
+        return pullPrev + (pull - pullPrev) * partial;
+    }
+
+    /** Cinematic bars: full for the target, a little thinner for those watching nearby. */
+    double letterbox(float partial) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return 0;
+        }
+        double amount = 0;
+        for (ClientSkyEvent event : events.values()) {
+            double t = event.time(partial), r = event.restoreAt();
+            if (t < 0 || event.finished(t)) continue;
+            double in = SkyScene.smooth(SkyTimeline.progress(t, 0, 30));
+            double out = t >= r ? 1 - SkyScene.smoothstep(0.15, 0.7, SkyScene.restoreProgress(t, r)) : 1;
+            if (event.state.targetEntityId() == mc.player.getId()) {
+                amount = Math.max(amount, in * out);
+            } else {
+                double d = distanceTo(event, mc.player.position());
+                amount = Math.max(amount, 0.75 * in * out * (1 - SkyScene.smoothstep(120, 200, d)));
+            }
+        }
+        return amount;
+    }
+
     private ClientSkyEvent localTargetEvent() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) {
@@ -279,10 +313,18 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
                 V3 held = event.heldPosition(t);
                 play(event, ModSounds.GRAB_CLOSE.get(), SoundSource.AMBIENT, held != null ? world(event, held) : null, 1.0f);
             }
+            if (!event.riserPlayed && t >= RISER_AT && event.restoreAt() > SkyTimeline.FIRST_CRACK) {
+                event.riserPlayed = true;
+                play(event, ModSounds.CINE_RISER.get(), SoundSource.AMBIENT, null, 0.9f);
+            }
             trackTarget(event, level);
+            leashTrail(event, level, t);
             moveRemoteTarget(event, level, t);
             landingEffects(event, level, t);
         }
+        pullPrev = pull;
+        pull += (pullGoal - pull) * 0.25f;
+        pullGoal *= 0.8f;
         if (events.isEmpty()) {
             if (++idleTicks > 100 && SceneCopy.allocated()) {
                 SceneCopy.release();
@@ -299,6 +341,42 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
             return;
         }
         event.updateAim(new V3(entity.getX() - event.state.cx(), entity.getY() - event.state.cy(), entity.getZ() - event.state.cz()));
+    }
+
+    /**
+     * A target who runs too far is dragged back by something unseen: everyone sees the streaks
+     * of light pulling at them, towards the place where they stood.
+     */
+    private void leashTrail(ClientSkyEvent event, ClientLevel level, double t) {
+        if (!leashActive(event, t)) {
+            return;
+        }
+        Entity entity = level.getEntity(event.state.targetEntityId());
+        if (entity == null || entity == Minecraft.getInstance().player) {
+            return; // the target feels the pull on screen instead (see Cinema)
+        }
+        double dx = event.state.cx() - entity.getX(), dz = event.state.cz() - entity.getZ();
+        double d = Math.hypot(dx, dz);
+        if (d <= SkyEventManager.LEASH_RADIUS) {
+            return;
+        }
+        double s = Math.min(1, (d - SkyEventManager.LEASH_RADIUS) / 6.0);
+        int n = 2 + (int) (s * 6);
+        for (int i = 0; i < n; i++) {
+            double a = level.random.nextDouble() * Math.PI * 2, rr = 0.4 + level.random.nextDouble() * 0.6;
+            level.addParticle(net.minecraft.core.particles.ParticleTypes.END_ROD,
+                    entity.getX() + Math.cos(a) * rr, entity.getY() + 0.2 + level.random.nextDouble() * 1.6, entity.getZ() + Math.sin(a) * rr,
+                    dx / d * 0.35 * s, 0.02, dz / d * 0.35 * s);
+        }
+        if (s > 0.2) {
+            level.addParticle(net.minecraft.core.particles.ParticleTypes.REVERSE_PORTAL, entity.getX(), entity.getY() + 1, entity.getZ(),
+                    dx / d * 0.6, 0, dz / d * 0.6);
+        }
+    }
+
+    /** The leash holds from the first sight of the event until the hand has caught the target. */
+    static boolean leashActive(ClientSkyEvent event, double t) {
+        return t >= SkyTimeline.PRESS && t < SkyTimeline.GRAB && t < event.restoreAt() && !event.state.locked();
     }
 
     /**
@@ -380,6 +458,8 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
             case PRESS -> {
                 // The sky is pressed in: the glass creaks and groans under the load.
                 play(event, ModSounds.GLASS_PRESS.get(), SoundSource.AMBIENT, impact, 1.0f);
+                // The world dims: a deep, wide hit opens the scene.
+                play(event, ModSounds.CINE_HIT.get(), SoundSource.AMBIENT, null, 1.0f);
                 Minecraft.getInstance().getMusicManager().stopPlaying();
                 event.theme = play(event, ModSounds.THEME_SUMMONING.get(), SoundSource.MUSIC, null, 1.0f);
             }
@@ -440,6 +520,53 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
     }
 
     /**
+     * The pull back: inside {@link SkyEventManager#LEASH_RADIUS} the target moves freely; beyond
+     * it an elastic force drags them back towards where they stood, the harder the further they go.
+     */
+    private void leash(ClientSkyEvent event, LocalPlayer player, double t) {
+        if (!leashActive(event, t)) {
+            event.pullTicks = 0;
+            return;
+        }
+        double dx = event.state.cx() - player.getX(), dz = event.state.cz() - player.getZ();
+        double d = Math.hypot(dx, dz);
+        if (d <= SkyEventManager.LEASH_RADIUS) {
+            event.pullTicks = 0;
+            return;
+        }
+        double s = Math.min(1, (d - SkyEventManager.LEASH_RADIUS) / 6.0);
+        event.pullTicks++;
+        double nx = dx / d, nz = dz / d;
+        Vec3 v = player.getDeltaMovement();
+        // Moving away is cancelled, then the body is pulled back.
+        double away = -(v.x * nx + v.z * nz);
+        double vx = v.x, vz = v.z;
+        if (away > 0) {
+            vx += nx * away * (0.6 + 0.4 * s);
+            vz += nz * away * (0.6 + 0.4 * s);
+        }
+        double pullSpeed = 0.08 + 0.22 * s;
+        vx += nx * pullSpeed;
+        vz += nz * pullSpeed;
+        double h = Math.hypot(vx, vz), max = 0.85;
+        if (h > max) {
+            vx *= max / h;
+            vz *= max / h;
+        }
+        double vy = v.y;
+        if (player.horizontalCollision && player.onGround()) {
+            vy = 0.45; // dragged over the obstacle
+        }
+        player.setDeltaMovement(vx, vy, vz);
+        pullGoal = Math.max(pullGoal, (float) (0.35 + 0.65 * s));
+        long now = player.level().getGameTime();
+        if (now - event.lastPullSound > 50) {
+            event.lastPullSound = now;
+            Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(ModSounds.LEASH_PULL.get(), 1.0f, 0.9f));
+        }
+    }
+
+    /**
      * Runs at the end of the local player's tick, before its position is sent to the server:
      * keeps the frozen target in place and moves them along the hand's path during the lift.
      */
@@ -453,6 +580,7 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
                 continue;
             }
             double t = event.time(0);
+            leash(event, player, t);
             // While the sky cracks the gaze is drawn gently upward, never forced.
             if (t >= SkyTimeline.CONNECT && t < SkyTimeline.FREEZE && t < event.restoreAt() && player.getXRot() > -14f) {
                 player.setXRot(player.getXRot() - 0.25f);

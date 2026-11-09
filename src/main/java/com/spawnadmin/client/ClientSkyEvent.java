@@ -25,6 +25,10 @@ final class ClientSkyEvent {
     final int id;
     final ClientLevel level;
     SkyEventSyncPayload state;
+    /** One-shot cues and the leash state on this client. */
+    boolean riserPlayed;
+    long lastPullSound = -1000;
+    int pullTicks;
     private final CompletableFuture<Fracture> pending;
     private SkyScene scene;
     SkyScene.ShardPose[] poses;

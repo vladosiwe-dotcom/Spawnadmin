@@ -94,6 +94,11 @@ void main() {
     color = mix(color, color * glassEdge, band * (0.35 + 0.4 * glow));
     color += vec3(0.80, 0.97, 1.0) * cut * (0.15 + 1.1 * glow);
 
+    // Dispersion: broken edges and glancing faces split the light into a rainbow.
+    vec3 rainbow = 0.5 + 0.5 * cos(6.2831 * (vec3(0.0, 0.33, 0.67) + ndv * 2.6 + variation * 3.0 + along * 0.04));
+    float prism = own * (smoothstep(0.86, 1.0, edge) * (0.25 + 0.6 * fresnel) + pow(1.0 - ndv, 3.0) * 0.18);
+    color += rainbow * prism * (0.5 + glint);
+
     // The sky lights up before it breaks; a white bloom pulses through the shell.
     float t = GameTime * 1200.0;
     float shimmer = 0.5 + 0.5 * sin(dot(worldPos, vec3(0.05, 0.04, 0.07)) + t * 0.7 + variation * 6.0);

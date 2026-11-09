@@ -158,11 +158,35 @@ class FractureTest {
         assertEquals(0.0, scene.pressure(r + SkyTimeline.RESTORE_LENGTH, r), 1e-9, "it springs back");
         long main = scene.fracture.cracks.stream().filter(CrackSegment::main).count();
         assertTrue(main > 10, "a great crack splits the sky: " + main);
-        double front = scene.crackFront(SkyTimeline.FIRST_CRACK + 30, r);
+        // The split creeps across the sky: how far along it it has run, as time goes on.
+        double full = splitReach(scene, scene.crackFront(SkyTimeline.CHIPS, r));
+        double early = splitReach(scene, scene.crackFront(SkyTimeline.FIRST_CRACK + 25, r));
+        double mid = splitReach(scene, scene.crackFront(SkyTimeline.FIRST_CRACK + 45, r));
+        assertTrue(early > 0.05 * full && early < 0.6 * full, "it has started but not crossed the sky after 1.25 s: " + early + "/" + full);
+        assertTrue(mid > early, "it keeps running: " + mid + " > " + early);
+        double front = scene.crackFront(SkyTimeline.FIRST_CRACK + 75, r);
         long mainVisible = scene.fracture.cracks.stream().filter(CrackSegment::main)
                 .filter(seg -> seg.visibleRange(front)[1] > 0.99).count();
-        assertTrue(mainVisible > main * 0.8, "the split runs across the whole sky within 1.5 s: " + mainVisible + "/" + main);
+        assertTrue(mainVisible > main * 0.8, "the split runs across the whole sky within about 4 s: " + mainVisible + "/" + main);
         assertTrue(scene.splitGap(SkyTimeline.FALL, r) > 0.99, "the halves part before the collapse");
+    }
+
+    /** Furthest point of the great split already visible, measured from the impact along the split. */
+    private static double splitReach(SkyScene scene, double front) {
+        V2 c = scene.fracture.impact;
+        double reach = 0;
+        for (CrackSegment seg : scene.fracture.cracks) {
+            if (!seg.main()) continue;
+            double[] range = seg.visibleRange(front);
+            for (int k = 0; k + 1 < range.length; k += 2) {
+                if (range[k + 1] - range[k] <= 1e-6) continue;
+                for (double f : new double[]{range[k], range[k + 1]}) {
+                    V2 p = seg.a().lerp(seg.b(), f);
+                    reach = Math.max(reach, p.sub(c).length());
+                }
+            }
+        }
+        return reach;
     }
 
     @Test

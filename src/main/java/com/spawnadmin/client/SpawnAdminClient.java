@@ -39,6 +39,7 @@ public final class SpawnAdminClient {
 
         var bus = NeoForge.EVENT_BUS;
         bus.addListener(SkyRenderer::onRenderStage);
+        bus.addListener(Cinema::letterbox);
         bus.addListener(ScreenFlash::render);
         bus.addListener(ScreenFlash::renderScreen);
         bus.addListener((ClientTickEvent.Post e) -> ClientSkyEvents.INSTANCE.tick());

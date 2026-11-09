@@ -193,5 +193,32 @@
         "attenuation_distance": 64
       }
     ]
+  },
+  "cine_hit": {
+    "subtitle": "subtitles.spawnadmin.cine_hit",
+    "sounds": [
+      {
+        "name": "spawnadmin:cine_hit",
+        "attenuation_distance": 320
+      }
+    ]
+  },
+  "cine_riser": {
+    "subtitle": "subtitles.spawnadmin.cine_riser",
+    "sounds": [
+      {
+        "name": "spawnadmin:cine_riser",
+        "attenuation_distance": 320
+      }
+    ]
+  },
+  "leash_pull": {
+    "subtitle": "subtitles.spawnadmin.leash_pull",
+    "sounds": [
+      {
+        "name": "spawnadmin:leash_pull",
+        "attenuation_distance": 32
+      }
+    ]
   }
 }

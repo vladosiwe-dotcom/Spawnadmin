@@ -84,18 +84,7 @@ final class SkyRenderer {
                 }
             }
         } else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
-            double stop = 0;
-            Vec3 cam = event.getCamera().getPosition();
-            for (ClientSkyEvent sky : events) {
-                if (sky.scene() == null) continue;
-                double t = sky.time(partial);
-                double d = cam.distanceTo(new Vec3(sky.state.cx(), sky.state.cy(), sky.state.cz()));
-                double reach = 1 - SkyScene.smoothstep(220, 320, d);
-                stop = Math.max(stop, sky.scene().timeStop(t, sky.restoreAt()) * reach);
-            }
-            if (stop > 0.002) {
-                renderTimeStop((float) stop);
-            }
+            Cinema.render(event, events, partial);
         }
     }
 
@@ -610,7 +599,11 @@ final class SkyRenderer {
             double width = c.width() * 2.2 * scene.crackWidth(c, front, t) * (c.main() ? 1.5 : 1.0);
             for (int k = 0; k + 1 < range.length; k += 2) {
                 if (range[k + 1] - range[k] > 1e-4) {
-                    emitCrack(buf, sky, c, i, range[k], range[k + 1], owner, pose, bx, by, bz, intensity, width, pressure);
+                    // The growing end of a crack is a hot point of light running through the glass.
+                    boolean tipAtEnd = k == 0 && range[k + 1] < 0.999;
+                    boolean tipAtStart = k == 2 && range[k] > 0.001;
+                    emitCrack(buf, sky, c, i, range[k], range[k + 1], owner, pose, bx, by, bz, intensity, width, pressure,
+                            tipAtStart, tipAtEnd);
                 }
             }
         }
@@ -618,50 +611,60 @@ final class SkyRenderer {
         draw(buf);
     }
 
+    /** Colours of the shock ring, red outside to violet inside: glass splitting the light. */
+    private static final float[][] SPECTRUM = {
+            {1.0f, 0.25f, 0.2f}, {1.0f, 0.7f, 0.2f}, {0.55f, 1.0f, 0.35f}, {0.3f, 0.75f, 1.0f}, {0.55f, 0.35f, 1.0f}};
+
     /**
      * The snap sends a ring of light racing across the dome from the impact: the shock running
-     * through the glass.
+     * through the glass, split into a spectrum and torn into streaks.
      */
     private static void shockwave(BufferBuilder buf, ClientSkyEvent sky, double bx, double by, double bz, double t,
                                   double pressure) {
-        double p = SkyTimeline.progress(t, SkyTimeline.FIRST_CRACK, SkyTimeline.FIRST_CRACK + 22);
+        double p = SkyTimeline.progress(t, SkyTimeline.FIRST_CRACK, SkyTimeline.FIRST_CRACK + 24);
         if (p <= 0 || p >= 1) {
             return;
         }
         V2 c = sky.scene().fracture.impact;
-        double radius = 0.02 + 1.0 * (1 - Math.pow(1 - p, 3));
-        float intensity = (float) (3.0 * (1 - p) * (1 - p));
-        double width = 1.2 + 4.0 * p;
-        int segs = 128;
-        double prevX = 0, prevY = 0, prevZ = 0;
-        boolean prevOk = false;
-        for (int i = 0; i <= segs; i++) {
-            double a = Math.PI * 2 * i / segs;
-            double u = c.x() + radius * Math.cos(a), v = c.y() + radius * Math.sin(a);
-            boolean ok = u * u + v * v < 0.97;
-            if (ok) {
-                double dent = pressure > 0 ? sky.scene().dent(u, v, pressure) : 0;
-                DomeShape.pointAtInto(u, v, CRACK_LIFT - 0.1 - dent, A);
-                sky.toWorld(A);
-                double x = bx + A[0], y = by + A[1], z = bz + A[2];
-                if (prevOk) {
-                    double dx = x - prevX, dy = y - prevY, dz = z - prevZ;
-                    double mx = (x + prevX) * 0.5, my = (y + prevY) * 0.5, mz = (z + prevZ) * 0.5;
-                    double cx = dy * mz - dz * my, cy = dz * mx - dx * mz, cz = dx * my - dy * mx;
-                    double cl = Math.sqrt(cx * cx + cy * cy + cz * cz);
-                    if (cl > 1e-9) {
-                        cx = cx / cl * width; cy = cy / cl * width; cz = cz / cl * width;
-                        crackVertex(buf, prevX - cx, prevY - cy, prevZ - cz, -1, intensity);
-                        crackVertex(buf, prevX + cx, prevY + cy, prevZ + cz, 1, intensity);
-                        crackVertex(buf, x + cx, y + cy, z + cz, 1, intensity);
-                        crackVertex(buf, prevX - cx, prevY - cy, prevZ - cz, -1, intensity);
-                        crackVertex(buf, x + cx, y + cy, z + cz, 1, intensity);
-                        crackVertex(buf, x - cx, y - cy, z - cz, -1, intensity);
+        double base = 0.02 + 1.0 * (1 - Math.pow(1 - p, 3));
+        float fade = (float) ((1 - p) * (1 - p));
+        double width = 0.8 + 2.4 * p;
+        int segs = 160;
+        for (int band = 0; band < SPECTRUM.length; band++) {
+            double radius = base * (1.0 + (2 - band) * (0.018 + 0.03 * p));
+            float[] col = SPECTRUM[band];
+            double prevX = 0, prevY = 0, prevZ = 0;
+            boolean prevOk = false;
+            for (int i = 0; i <= segs; i++) {
+                double a = Math.PI * 2 * i / segs;
+                double u = c.x() + radius * Math.cos(a), v = c.y() + radius * Math.sin(a);
+                boolean ok = u * u + v * v < 0.97;
+                if (ok) {
+                    double dent = pressure > 0 ? sky.scene().dent(u, v, pressure) : 0;
+                    DomeShape.pointAtInto(u, v, CRACK_LIFT - 0.1 - dent, A);
+                    sky.toWorld(A);
+                    double x = bx + A[0], y = by + A[1], z = bz + A[2];
+                    if (prevOk) {
+                        double streak = 0.25 + 0.75 * Math.pow(hash(i, 7 + band / 2), 2);
+                        float intensity = (float) (2.2 * fade * streak);
+                        double dx = x - prevX, dy = y - prevY, dz = z - prevZ;
+                        double mx = (x + prevX) * 0.5, my = (y + prevY) * 0.5, mz = (z + prevZ) * 0.5;
+                        double cx = dy * mz - dz * my, cy = dz * mx - dx * mz, cz = dx * my - dy * mx;
+                        double cl = Math.sqrt(cx * cx + cy * cy + cz * cz);
+                        if (cl > 1e-9) {
+                            cx = cx / cl * width; cy = cy / cl * width; cz = cz / cl * width;
+                            crackVertex(buf, prevX - cx, prevY - cy, prevZ - cz, -1, intensity, col);
+                            crackVertex(buf, prevX + cx, prevY + cy, prevZ + cz, 1, intensity, col);
+                            crackVertex(buf, x + cx, y + cy, z + cz, 1, intensity, col);
+                            crackVertex(buf, prevX - cx, prevY - cy, prevZ - cz, -1, intensity, col);
+                            crackVertex(buf, x + cx, y + cy, z + cz, 1, intensity, col);
+                            crackVertex(buf, x - cx, y - cy, z - cz, -1, intensity, col);
+                        }
                     }
+                    prevX = x; prevY = y; prevZ = z;
                 }
-                prevX = x; prevY = y; prevZ = z;
+                prevOk = ok;
             }
-            prevOk = ok;
         }
     }
 
@@ -675,9 +678,11 @@ final class SkyRenderer {
 
     private static void emitCrack(BufferBuilder buf, ClientSkyEvent sky, CrackSegment c, int index, double f0, double f1,
                                   ShardData owner, SkyScene.ShardPose pose, double bx, double by, double bz,
-                                  float intensity, double width, double pressure) {
+                                  float intensity, double width, double pressure, boolean tipAtStart, boolean tipAtEnd) {
         double ax = c.a().x(), ay = c.a().y(), ex = c.b().x() - ax, ey = c.b().y() - ay;
         double segLen = Math.sqrt(ex * ex + ey * ey);
+        double blocksPerUnit = segLen * DomeShape.blocksPerDiscUnit();
+        float prevI = intensity;
         double nx = -ey / Math.max(segLen, 1e-12), ny = ex / Math.max(segLen, 1e-12);
         double blocks = segLen * (f1 - f0) * DomeShape.blocksPerDiscUnit();
         int pieces = Math.max(1, (int) Math.ceil(blocks / CRACK_PIECE));
@@ -691,6 +696,11 @@ final class SkyRenderer {
             double u = ax + ex * fullT + nx * off, v = ay + ey * fullT + ny * off;
             crackPoint(sky, u, v, owner, pose, pressure, A);
             double x = bx + A[0], y = by + A[1], z = bz + A[2];
+            float curI = intensity;
+            if (tipAtEnd || tipAtStart) {
+                double toTip = Math.min(tipAtEnd ? (f1 - f) * blocksPerUnit : 1e9, tipAtStart ? (f - f0) * blocksPerUnit : 1e9);
+                curI = (float) (intensity * (1.0 + (c.main() ? 3.5 : 2.2) * Math.exp(-toTip / 2.2)));
+            }
             if (p > 0) {
                 double dx = x - prevX, dy = y - prevY, dz = z - prevZ;
                 double mx = (x + prevX) * 0.5, my = (y + prevY) * 0.5, mz = (z + prevZ) * 0.5;
@@ -698,15 +708,16 @@ final class SkyRenderer {
                 double cl = Math.sqrt(cx * cx + cy * cy + cz * cz);
                 if (cl > 1e-9) {
                     cx = cx / cl * width; cy = cy / cl * width; cz = cz / cl * width;
-                    crackVertex(buf, prevX - cx, prevY - cy, prevZ - cz, -1, intensity);
-                    crackVertex(buf, prevX + cx, prevY + cy, prevZ + cz, 1, intensity);
-                    crackVertex(buf, x + cx, y + cy, z + cz, 1, intensity);
-                    crackVertex(buf, prevX - cx, prevY - cy, prevZ - cz, -1, intensity);
-                    crackVertex(buf, x + cx, y + cy, z + cz, 1, intensity);
-                    crackVertex(buf, x - cx, y - cy, z - cz, -1, intensity);
+                    crackVertex(buf, prevX - cx, prevY - cy, prevZ - cz, -1, prevI);
+                    crackVertex(buf, prevX + cx, prevY + cy, prevZ + cz, 1, prevI);
+                    crackVertex(buf, x + cx, y + cy, z + cz, 1, curI);
+                    crackVertex(buf, prevX - cx, prevY - cy, prevZ - cz, -1, prevI);
+                    crackVertex(buf, x + cx, y + cy, z + cz, 1, curI);
+                    crackVertex(buf, x - cx, y - cy, z - cz, -1, curI);
                 }
             }
             prevX = x; prevY = y; prevZ = z;
+            prevI = curI;
         }
     }
 
@@ -723,6 +734,11 @@ final class SkyRenderer {
             out[2] += owner.origin.z() + pose.offset.z();
         }
         sky.toWorld(out);
+    }
+
+    private static void crackVertex(BufferBuilder buf, double x, double y, double z, float across, float intensity, float[] col) {
+        buf.addVertex((float) x, (float) y, (float) z).setUv(across, intensity)
+                .setColor(col[0], col[1], col[2], 1.0f).setNormal(0f, -1f, 0f);
     }
 
     private static void crackVertex(BufferBuilder buf, double x, double y, double z, float across, float intensity) {
@@ -759,27 +775,6 @@ final class SkyRenderer {
                 .setUv((float) along, (float) fade).setColor(0.96f, 0.98f, 1.0f, 1.0f)
                 .setNormal((float) n.x(), (float) n.y(), (float) n.z()));
         draw(buf);
-    }
-
-    // ------------------------------------------------------------------ time stop
-
-    private static void renderTimeStop(float strength) {
-        int tex = SceneCopy.capture();
-        ShaderInstance shader = ModShaders.timeStop;
-        shader.safeGetUniform("StopParams").set(strength, 0f, 0f, 0f);
-        RenderSystem.setShaderTexture(0, tex);
-        RenderSystem.setShader(() -> shader);
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
-        RenderSystem.disableBlend();
-        BufferBuilder buf = Tesselator.getInstance().begin(VertexFormat.Mode.TRIANGLE_STRIP, DefaultVertexFormat.POSITION_TEX);
-        buf.addVertex(-1f, -1f, 0f).setUv(0f, 0f);
-        buf.addVertex(1f, -1f, 0f).setUv(1f, 0f);
-        buf.addVertex(-1f, 1f, 0f).setUv(0f, 1f);
-        buf.addVertex(1f, 1f, 0f).setUv(1f, 1f);
-        draw(buf);
-        RenderSystem.enableDepthTest();
-        RenderSystem.depthMask(true);
     }
 
     private static void draw(BufferBuilder buf) {
