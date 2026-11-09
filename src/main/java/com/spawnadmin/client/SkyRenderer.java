@@ -61,6 +61,7 @@ final class SkyRenderer {
     private static double[] inX = new double[32], inY = new double[32], inZ = new double[32];
     private static double[] roX = new double[32], roY = new double[32], roZ = new double[32];
     private static double[] riX = new double[32], riY = new double[32], riZ = new double[32];
+    private static double[] lu = new double[32], lv = new double[32];
     private static final SkyScene.ShardPose DEBRIS_POSE = new SkyScene.ShardPose();
     private static final HandRig.Pose HAND = new HandRig.Pose();
 
@@ -309,6 +310,14 @@ final class SkyRenderer {
      * event center) when the shard sat in the dome: sky colour and cloud texel are looked up
      * there, so the piece of sky travels with the shard.
      */
+    private static int localU, localV;
+
+    /** Sets the shard-surface coordinate (blocks) for the next glass vertices. */
+    private static void local(double u, double v) {
+        localU = (int) Math.max(-32000, Math.min(32000, Math.round(u * 100)));
+        localV = (int) Math.max(-32000, Math.min(32000, Math.round(v * 100)));
+    }
+
     private static void glassVertex(BufferBuilder buf, double px, double py, double pz, double nx, double ny, double nz,
                                     double rx, double ry, double rz, float edge, float edgeGlow, float alpha,
                                     double frozenTicks, float variation) {
@@ -330,7 +339,7 @@ final class SkyRenderer {
                 .setColor(edge, edgeGlow, skyT, alpha)
                 .setUv(u, v)
                 .setUv1((int) (vis * 1000), (int) (variation * 1000))
-                .setUv2(0, 0)
+                .setUv2(localU, localV)
                 .setNormal((float) nx, (float) ny, (float) nz);
     }
 
@@ -395,6 +404,7 @@ final class SkyRenderer {
             inX = new double[m]; inY = new double[m]; inZ = new double[m];
             roX = new double[m]; roY = new double[m]; roZ = new double[m];
             riX = new double[m]; riY = new double[m]; riZ = new double[m];
+            lu = new double[m]; lv = new double[m];
         }
     }
 
@@ -437,8 +447,12 @@ final class SkyRenderer {
             nly = ty / tl;
             nlz = tz / tl;
         }
+        // the shard's own surface frame, for its unique surface detail
+        V3 su = s.outward, sv = s.normal.cross(s.outward);
         for (int k = 0; k < n; k++) {
             V3 o0 = s.outer[k], in0 = s.inner[k];
+            lu[k] = o0.dot(su);
+            lv[k] = o0.dot(sv);
             double dk = pressure > 0 ? scene.dent(s.outline[k].x(), s.outline[k].y(), pressure) : 0;
             V3 o = dk > 0 ? new V3(o0.x() - s.normal.x() * dk, o0.y() - s.normal.y() * dk, o0.z() - s.normal.z() * dk) : o0;
             V3 in = dk > 0 ? new V3(in0.x() - s.normal.x() * dk, in0.y() - s.normal.y() * dk, in0.z() - s.normal.z() * dk) : in0;
@@ -482,13 +496,20 @@ final class SkyRenderer {
 
         for (int k = 0; k < n; k++) {
             int k2 = (k + 1) % n;
+            local(0, 0);
             glassVertex(buf, cOx, cOy, cOz, fnx, fny, fnz, rcOx, rcOy, rcOz, 0f, edgeGlow, alpha, frozen, var);
+            local(lu[k], lv[k]);
             glassVertex(buf, outX[k], outY[k], outZ[k], fnx, fny, fnz, roX[k], roY[k], roZ[k], 1f, edgeGlow, alpha, frozen, var);
+            local(lu[k2], lv[k2]);
             glassVertex(buf, outX[k2], outY[k2], outZ[k2], fnx, fny, fnz, roX[k2], roY[k2], roZ[k2], 1f, edgeGlow, alpha, frozen, var);
 
+            local(0, 0);
             glassVertex(buf, cIx, cIy, cIz, -fnx, -fny, -fnz, rcIx, rcIy, rcIz, 0f, edgeGlow, alpha, frozen, var);
+            local(lu[k2], lv[k2]);
             glassVertex(buf, inX[k2], inY[k2], inZ[k2], -fnx, -fny, -fnz, riX[k2], riY[k2], riZ[k2], 1f, edgeGlow, alpha, frozen, var);
+            local(lu[k], lv[k]);
             glassVertex(buf, inX[k], inY[k], inZ[k], -fnx, -fny, -fnz, riX[k], riY[k], riZ[k], 1f, edgeGlow, alpha, frozen, var);
+            local(lu[k], lv[k]);
 
             double ex = outX[k2] - outX[k], ey = outY[k2] - outY[k], ez = outZ[k2] - outZ[k];
             if (ex * ex + ey * ey + ez * ez < 1e-8) {
@@ -538,6 +559,7 @@ final class SkyRenderer {
             double broke = d.isChip() ? d.chipTime * 20 : SkyTimeline.FALL + d.detachDelay * 20;
             double frozen = ticks - (t - broke);
             float a = (float) (pose.alpha * 0.95);
+            local(i % 7, i % 5);
             glassVertex(buf, px[0], py[0], pz[0], B[0], B[1], B[2], rx[0], ry[0], rz[0], 1f, 0.9f, a, frozen, 0.5f);
             glassVertex(buf, px[1], py[1], pz[1], B[0], B[1], B[2], rx[1], ry[1], rz[1], 0.6f, 0.9f, a, frozen, 0.5f);
             glassVertex(buf, px[2], py[2], pz[2], B[0], B[1], B[2], rx[2], ry[2], rz[2], 0.6f, 0.9f, a, frozen, 0.5f);
@@ -592,7 +614,55 @@ final class SkyRenderer {
                 }
             }
         }
+        shockwave(buf, sky, bx, by, bz, t, pressure);
         draw(buf);
+    }
+
+    /**
+     * The snap sends a ring of light racing across the dome from the impact: the shock running
+     * through the glass.
+     */
+    private static void shockwave(BufferBuilder buf, ClientSkyEvent sky, double bx, double by, double bz, double t,
+                                  double pressure) {
+        double p = SkyTimeline.progress(t, SkyTimeline.FIRST_CRACK, SkyTimeline.FIRST_CRACK + 22);
+        if (p <= 0 || p >= 1) {
+            return;
+        }
+        V2 c = sky.scene().fracture.impact;
+        double radius = 0.02 + 1.0 * (1 - Math.pow(1 - p, 3));
+        float intensity = (float) (3.0 * (1 - p) * (1 - p));
+        double width = 1.2 + 4.0 * p;
+        int segs = 128;
+        double prevX = 0, prevY = 0, prevZ = 0;
+        boolean prevOk = false;
+        for (int i = 0; i <= segs; i++) {
+            double a = Math.PI * 2 * i / segs;
+            double u = c.x() + radius * Math.cos(a), v = c.y() + radius * Math.sin(a);
+            boolean ok = u * u + v * v < 0.97;
+            if (ok) {
+                double dent = pressure > 0 ? sky.scene().dent(u, v, pressure) : 0;
+                DomeShape.pointAtInto(u, v, CRACK_LIFT - 0.1 - dent, A);
+                sky.toWorld(A);
+                double x = bx + A[0], y = by + A[1], z = bz + A[2];
+                if (prevOk) {
+                    double dx = x - prevX, dy = y - prevY, dz = z - prevZ;
+                    double mx = (x + prevX) * 0.5, my = (y + prevY) * 0.5, mz = (z + prevZ) * 0.5;
+                    double cx = dy * mz - dz * my, cy = dz * mx - dx * mz, cz = dx * my - dy * mx;
+                    double cl = Math.sqrt(cx * cx + cy * cy + cz * cz);
+                    if (cl > 1e-9) {
+                        cx = cx / cl * width; cy = cy / cl * width; cz = cz / cl * width;
+                        crackVertex(buf, prevX - cx, prevY - cy, prevZ - cz, -1, intensity);
+                        crackVertex(buf, prevX + cx, prevY + cy, prevZ + cz, 1, intensity);
+                        crackVertex(buf, x + cx, y + cy, z + cz, 1, intensity);
+                        crackVertex(buf, prevX - cx, prevY - cy, prevZ - cz, -1, intensity);
+                        crackVertex(buf, x + cx, y + cy, z + cz, 1, intensity);
+                        crackVertex(buf, x - cx, y - cy, z - cz, -1, intensity);
+                    }
+                }
+                prevX = x; prevY = y; prevZ = z;
+            }
+            prevOk = ok;
+        }
     }
 
     private static double hash(int a, int b) {
@@ -612,7 +682,7 @@ final class SkyRenderer {
         double blocks = segLen * (f1 - f0) * DomeShape.blocksPerDiscUnit();
         int pieces = Math.max(1, (int) Math.ceil(blocks / CRACK_PIECE));
         // A real crack wanders: interior points are pushed sideways a little (deterministic).
-        double wander = Math.min(0.0028, segLen * 0.06);
+        double wander = 0; // the crack geometry itself is already jagged and shared with the shards
         double prevX = 0, prevY = 0, prevZ = 0;
         for (int p = 0; p <= pieces; p++) {
             double f = f0 + (f1 - f0) * p / pieces;

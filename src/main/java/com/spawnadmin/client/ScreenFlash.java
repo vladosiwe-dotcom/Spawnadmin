@@ -21,6 +21,16 @@ final class ScreenFlash {
         level = Math.max(level, strength);
     }
 
+    private static long pulseStart, pulseFade;
+    private static float pulseStrength;
+
+    /** A brief flash of light that fades over {@code fadeMs} (e.g. the sky giving way). */
+    static void pulse(float strength, long fadeMs) {
+        pulseStart = System.currentTimeMillis();
+        pulseFade = fadeMs;
+        pulseStrength = strength;
+    }
+
     /** Full white for {@code holdMs}, then fade out over {@code fadeMs}. */
     static void whiteOut(long holdMs, long fadeMs) {
         long now = System.currentTimeMillis();
@@ -40,6 +50,10 @@ final class ScreenFlash {
     private static void draw(GuiGraphics g, boolean consumeLevel) {
         long now = System.currentTimeMillis();
         float a = level;
+        if (pulseFade > 0 && now < pulseStart + pulseFade) {
+            float k = 1f - (now - pulseStart) / (float) pulseFade;
+            a = Math.max(a, pulseStrength * k * k);
+        }
         if (now < holdUntil) {
             a = 1f;
         } else if (now < fadeEnd) {

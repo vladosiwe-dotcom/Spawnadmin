@@ -293,7 +293,6 @@ SOUNDS = {
     "time_stop": time_stop,
     "hand_appear": hand_appear,
     "grab_teleport": grab_teleport,
-    "sky_restore": restore,
 }
 
 

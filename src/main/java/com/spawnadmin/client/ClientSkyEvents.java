@@ -329,6 +329,10 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
                         (level.random.nextDouble() - 0.5) * 0.4, 0.15 + level.random.nextDouble() * 0.35,
                         (level.random.nextDouble() - 0.5) * 0.4);
             }
+            for (int i = 0; i < Math.min(8, (int) size); i++) {
+                level.addParticle(net.minecraft.core.particles.ParticleTypes.POOF, x + (level.random.nextDouble() - 0.5) * size * 0.5,
+                        y + 0.3, z + (level.random.nextDouble() - 0.5) * size * 0.5, 0, 0.02, 0);
+            }
             if (size > 3 && sounds++ < 3) {
                 Minecraft.getInstance().getSoundManager().play(new SimpleSoundInstance(ModSounds.GLASS_LAND.get().getLocation(),
                         SoundSource.AMBIENT, 0.9f, 0.8f + level.random.nextFloat() * 0.4f, SoundInstance.createUnseededRandom(),
@@ -385,6 +389,11 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
                 play(event, ModSounds.SKY_CRACK.get(), SoundSource.AMBIENT, impact, 0.9f);
             }
             case FALL -> {
+                // The sky gives way: a flash of light for everyone near enough to see it.
+                Minecraft mc = Minecraft.getInstance();
+                if (mc.player != null && distanceTo(event, mc.player.position()) < 180) {
+                    ScreenFlash.pulse(0.55f, 900);
+                }
                 play(event, ModSounds.SKY_SHATTER.get(), SoundSource.AMBIENT, rift, 1.0f);
                 play(event, ModSounds.RIFT_OPEN.get(), SoundSource.AMBIENT, rift, 1.0f);
             }

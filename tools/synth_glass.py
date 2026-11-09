@@ -173,9 +173,9 @@ def write(path, x):
 
 def main():
     out = sys.argv[1]
-    jobs = {"glass_press": glass_press, "glass_snap": glass_snap, "sky_crack": crack_spread,
-            "sky_shatter": sky_shatter, "glass_land1": lambda: glass_land(1), "glass_land2": lambda: glass_land(2),
-            "glass_land3": lambda: glass_land(3)}
+    # Only the creak stays synthesized; the other glass sounds are built from real CC0
+    # recordings by tools/build_glass_sfx.py.
+    jobs = {"glass_press": glass_press}
     for name, fn in jobs.items():
         x = fn()
         wav = os.path.join(out, name + ".wav")

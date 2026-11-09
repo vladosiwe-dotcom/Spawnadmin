@@ -64,7 +64,7 @@ class FractureTest {
             for (V2 a : s.outline) for (V2 b : s.outline) maxD = Math.max(maxD, a.dist(b));
             double aspect = maxD * maxD / Math.max(s.area2(), 1e-12);
             if (aspect > 5.0) slivers++;
-            if (corners(s.outline) == 3) triangles++;
+            if (s.coarseCorners == 3) triangles++;
         }
         assertTrue(slivers > f.shards.size() / 4, "many long splinters: " + slivers + "/" + f.shards.size());
         assertTrue(triangles > f.shards.size() / 10, "many sharp triangles: " + triangles + "/" + f.shards.size());
@@ -212,6 +212,27 @@ class FractureTest {
     }
 
     @Test
+    void everyShardHasItsOwnJaggedOutline() {
+        Fracture f = Fracture.generate(20261108L);
+        java.util.Set<String> shapes = new java.util.HashSet<>();
+        int jagged = 0;
+        for (ShardData s : f.shards) {
+            if (s.outline.length > s.coarseCorners + 2) jagged++;
+            // shape signature: vertex count + rounded perimeter/area ratio
+            double per = 0;
+            for (int i = 0; i < s.outline.length; i++) per += s.outline[i].dist(s.outline[(i + 1) % s.outline.length]);
+            shapes.add(String.format(java.util.Locale.ROOT, "%d:%.7f:%.6f", s.outline.length, s.area2(), per));
+            // star-shaped from the centroid (the renderer fans from it): every triangle positive
+            for (int i = 0; i < s.outline.length; i++) {
+                V2 a = s.outline[i].sub(s.centroid2), b = s.outline[(i + 1) % s.outline.length].sub(s.centroid2);
+                assertTrue(a.cross(b) > -1e-12, "fan from the centroid stays valid for shard " + s.index);
+            }
+        }
+        assertTrue(jagged > f.shards.size() * 0.8, "edges are jagged, not straight: " + jagged + "/" + f.shards.size());
+        assertTrue(shapes.size() > f.shards.size() * 0.95, "every shard has its own shape: " + shapes.size());
+    }
+
+    @Test
     void adjacencyIsSymmetric() {
         Fracture f = Fracture.generate(5L);
         for (int i = 0; i < f.neighbours.length; i++) {
@@ -317,11 +338,12 @@ class FractureTest {
     }
 
     private static boolean inside(V2[] poly, V2 p) {
-        for (int i = 0; i < poly.length; i++) {
-            V2 a = poly[i], b = poly[(i + 1) % poly.length];
-            if (b.sub(a).cross(p.sub(a)) < -1e-9) return false;
+        boolean in = false;
+        for (int i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+            V2 a = poly[i], b = poly[j];
+            if ((a.y() > p.y()) != (b.y() > p.y()) && p.x() < (b.x() - a.x()) * (p.y() - a.y()) / (b.y() - a.y()) + a.x()) in = !in;
         }
-        return true;
+        return in;
     }
 
     private static void assertClose(V3 expected, V3 actual, double eps, String msg) {

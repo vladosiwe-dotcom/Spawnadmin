@@ -41,6 +41,8 @@ public final class ShardData {
     public final double thickness;
     /** Unit tangent at the centroid pointing away from the impact (along the dome). */
     public final V3 outward;
+    /** Corners of the shard before its edges were made jagged (its basic shape). */
+    public int coarseCorners;
     /** How far (blocks, as a vector) this shard is pushed when the two halves of the sky part. */
     public final V3 splitPush;
 

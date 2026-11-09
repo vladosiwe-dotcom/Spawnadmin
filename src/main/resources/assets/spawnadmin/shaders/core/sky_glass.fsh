@@ -19,6 +19,7 @@ in vec4 vertexColor;
 in vec2 cloudUv;
 in float cloudVis;
 in float variation;
+in vec2 localPos;
 in vec3 worldNormal;
 in vec3 viewNormal;
 in vec3 worldPos;
@@ -61,9 +62,30 @@ void main() {
     vec3 sun = normalize(vec3(0.3, 0.88, 0.25));
     float glint = pow(max(dot(R, sun), 0.0), 220.0) * 4.0 + pow(max(dot(R, sun), 0.0), 24.0) * 0.18;
 
+    // Every shard is its own piece of glass: its tint, its scratches, the ripple marks of the
+    // fracture along its edges, a few bubbles. Shown on broken pieces; the sealed sky stays clean.
+    float own = clamp(glow * 1.2, 0.0, 1.0);
+    vec3 tint = mix(mix(vec3(0.88, 1.0, 0.93), vec3(0.88, 0.95, 1.05), smoothstep(0.2, 0.6, variation)),
+                    vec3(0.97, 0.98, 1.0), smoothstep(0.6, 0.95, variation));
+    float ang = variation * 6.2831;
+    vec2 sdir = vec2(cos(ang), sin(ang));
+    float along = dot(localPos, sdir);
+    float across = dot(localPos, vec2(-sdir.y, sdir.x));
+    float scratch = smoothstep(0.965, 1.0, sin(across * 7.0 + 2.5 * sin(along * 0.35 + variation * 31.0)))
+                  * step(0.35, fract(variation * 13.0)) * smoothstep(-6.0, 6.0, along + 8.0 * variation);
+    float r = length(localPos);
+    float ripple = (0.5 + 0.5 * sin(r * 11.0 + variation * 40.0)) * smoothstep(0.78, 0.98, edge);
+    float hackle = pow(0.5 + 0.5 * sin(atan(localPos.y, localPos.x) * 70.0 + variation * 90.0), 6.0) * smoothstep(0.88, 1.0, edge);
+    vec2 cell = floor(localPos * 5.0);
+    float bubble = step(0.996, hash(cell + variation * 17.0)) * smoothstep(0.25, 0.0, length(fract(localPos * 5.0) - 0.5));
+
     vec3 color = mix(sky, refr, 0.12 + 0.25 * glow * edge);
+    color *= mix(vec3(1.0), tint, own);
     color = mix(color, env, fresnel * (0.25 + 0.5 * glow));
     color += vec3(glint) * (0.3 + glow);
+    // surface detail catches the light (strongest at grazing angles, where real scratches shine)
+    float catchLight = 0.25 + 0.75 * fresnel + glint;
+    color += vec3(0.9, 0.97, 1.0) * own * (scratch * 0.35 * catchLight + hackle * 0.25 + ripple * 0.06 + bubble * 0.5);
 
     // Glass edge: a thin dark-green band and a bright cut line, like a real broken pane.
     float band = smoothstep(0.80, 0.93, edge) * (1.0 - smoothstep(0.96, 1.0, edge));

@@ -4,6 +4,7 @@
 //   Color  r = edge proximity, g = edge glow, b = sky gradient (0 horizon .. 1 zenith), a = alpha
 //   UV0    = cloud texture coordinate of this point of the sky, at its rest position
 //   UV1    x = cloud visibility * 1000, y = per-shard variation * 1000
+//   UV2    position on the shard's own surface, blocks * 100 (for its unique surface detail)
 in vec3 Position;
 in vec4 Color;
 in vec2 UV0;
@@ -18,6 +19,7 @@ out vec4 vertexColor;
 out vec2 cloudUv;
 out float cloudVis;
 out float variation;
+out vec2 localPos;
 out vec3 worldNormal;
 out vec3 viewNormal;
 out vec3 worldPos;
@@ -28,6 +30,7 @@ void main() {
     cloudUv = UV0;
     cloudVis = float(UV1.x) / 1000.0;
     variation = float(UV1.y) / 1000.0;
+    localPos = vec2(UV2) / 100.0;
     worldNormal = Normal;
     viewNormal = mat3(ModelViewMat) * Normal;
     worldPos = Position;

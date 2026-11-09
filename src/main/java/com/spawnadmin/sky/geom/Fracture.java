@@ -136,7 +136,19 @@ public final class Fracture {
             }
         }
 
-        // 4. the shared edges of the mesh are the crack network
+        // 4. real cracks are never straight: every crack becomes a unique jagged line, shared by
+        // both pieces it separates (the great split stays straight)
+        List<V2> coarseCentroids = new ArrayList<>();
+        for (int pi = 0; pi < mesh.polys.size(); pi++) {
+            coarseCentroids.add(centroid(mesh.outline(pi)));
+        }
+        int[] coarseCorners = new int[mesh.polys.size()];
+        for (int pi = 0; pi < mesh.polys.size(); pi++) {
+            coarseCorners[pi] = countCorners(mesh.outline(pi));
+        }
+        mesh.jag(seed, coarseCentroids, mainAnchor, mainDir);
+
+        // 5. the shared edges of the mesh are the crack network
         Map<Long, int[]> edgeOwners = mesh.owners;
         List<int[]> edges = new ArrayList<>(); // {vA, vB, pieceA, pieceB}
         List<List<Integer>> nb = new ArrayList<>();
@@ -259,8 +271,9 @@ public final class Fracture {
             for (int k = 0; k < poly.length; k++) {
                 outline[k] = nodes.get(poly[k]);
             }
-            ShardData shard = buildShard(rnd, p, outline, impact, openRadius, isEarly(outline, impact) && rnd.nextDouble() < 0.1,
-                    mainAnchor, mainDir);
+            ShardData shard = buildShard(rnd, p, outline, coarseCentroids.get(p), impact, openRadius,
+                    isEarly(outline, impact) && rnd.nextDouble() < 0.1, mainAnchor, mainDir);
+            shard.coarseCorners = coarseCorners[p];
             shards.add(shard);
             neighbours[p] = nb.get(p).stream().distinct().mapToInt(Integer::intValue).toArray();
             if (shard.detaches) {
@@ -568,6 +581,105 @@ public final class Fracture {
             return true;
         }
 
+        /**
+         * Turns every internal edge into a jagged polyline. The offsets are seeded per edge, taper
+         * to zero at both ends (so neighbouring cracks never cross) and are inserted into both
+         * polygons that share the edge, so the mesh stays watertight. Rim edges and edges on the
+         * great split stay straight.
+         */
+        void jag(long seed, List<V2> centroids, V2 splitAnchor, V2 splitDir) {
+            V2 sn = new V2(-splitDir.y(), splitDir.x());
+            List<Long> keys = new ArrayList<>(owners.keySet());
+            keys.sort(Long::compare);
+            for (long key : keys) {
+                int[] o = owners.get(key);
+                if (o == null || o[1] < 0) continue;
+                int va = (int) (key >>> 32), vb = (int) key;
+                V2 a = verts.get(va), b = verts.get(vb);
+                double len = a.dist(b);
+                if (len < 0.004) continue;
+                if (Math.abs(a.sub(splitAnchor).dot(sn)) < 1e-5 && Math.abs(b.sub(splitAnchor).dot(sn)) < 1e-5) continue;
+                V2 dir = b.sub(a).mul(1 / len);
+                V2 nrm = new V2(-dir.y(), dir.x());
+                double room = Double.MAX_VALUE;
+                for (int pi : o) {
+                    V2 c = centroids.get(pi);
+                    room = Math.min(room, Math.abs(c.sub(a).dot(nrm)));
+                }
+                int k = (int) Math.max(1, Math.min(7, Math.round(len / 0.008)));
+                double amp = Math.min(0.0035, Math.min(0.16 * room, 0.35 * len / (k + 1)));
+                // Validate against both pieces: the zig-zag must keep each piece star-shaped from its
+                // centroid (the renderer fans from it). Halve the amplitude until it does.
+                int[][] saved = {polys.get(o[0]).clone(), polys.get(o[1]).clone()};
+                int vertsBefore = verts.size();
+                int[] chain = null;
+                for (double scale = 1.0; scale > 0.05; scale *= 0.5) {
+                    SplittableRandom r = new SplittableRandom(seed ^ (key * 0x9E3779B97F4A7C15L));
+                    chain = new int[k];
+                    double sign = r.nextBoolean() ? 1 : -1;
+                    for (int j = 0; j < k; j++) {
+                        double t = (j + 1.0) / (k + 1) + (r.nextDouble() - 0.5) * 0.4 / (k + 1);
+                        // a sharp zig-zag with random size; offsets vanish towards the ends
+                        sign = r.nextDouble() < 0.7 ? -sign : sign;
+                        double off = amp * scale * Math.sin(Math.PI * t) * sign * (0.35 + 0.65 * r.nextDouble());
+                        chain[j] = verts.size();
+                        verts.add(a.add(dir.mul(len * t)).add(nrm.mul(off)));
+                    }
+                    for (int pi : o) {
+                        insertChain(pi, va, vb, chain);
+                    }
+                    if (starShaped(o[0], centroids.get(o[0])) && starShaped(o[1], centroids.get(o[1]))) {
+                        break;
+                    }
+                    // undo and retry flatter
+                    polys.set(o[0], saved[0].clone());
+                    polys.set(o[1], saved[1].clone());
+                    while (verts.size() > vertsBefore) verts.remove(verts.size() - 1);
+                    chain = null;
+                }
+                if (chain == null) {
+                    continue; // keep this crack straight
+                }
+                owners.remove(key);
+                int prev = va;
+                for (int j = 0; j <= k; j++) {
+                    int next = j < k ? chain[j] : vb;
+                    long ek = edgeKey(prev, next);
+                    owners.put(ek, new int[]{o[0], o[1]});
+                    prev = next;
+                }
+            }
+        }
+
+        private boolean starShaped(int pi, V2 c) {
+            int[] poly = polys.get(pi);
+            for (int i = 0; i < poly.length; i++) {
+                V2 a = verts.get(poly[i]).sub(c), b = verts.get(poly[(i + 1) % poly.length]).sub(c);
+                if (a.cross(b) <= 1e-12) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /** Inserts {@code chain} (ordered from va to vb) between va and vb in polygon q. */
+        private void insertChain(int q, int va, int vb, int[] chain) {
+            int[] poly = polys.get(q);
+            for (int k = 0; k < poly.length; k++) {
+                int x = poly[k], y = poly[(k + 1) % poly.length];
+                boolean forward = x == va && y == vb, backward = x == vb && y == va;
+                if (!forward && !backward) continue;
+                int[] out = new int[poly.length + chain.length];
+                System.arraycopy(poly, 0, out, 0, k + 1);
+                for (int j = 0; j < chain.length; j++) {
+                    out[k + 1 + j] = forward ? chain[j] : chain[chain.length - 1 - j];
+                }
+                System.arraycopy(poly, k + 1, out, k + 1 + chain.length, poly.length - k - 1);
+                polys.set(q, out);
+                return;
+            }
+        }
+
         private static int[] resolve(List<Integer> list, int[] ids) {
             int[] out = new int[list.size()];
             for (int i = 0; i < out.length; i++) {
@@ -700,7 +812,7 @@ public final class Fracture {
             double len = 0.006 + rnd.nextDouble() * 0.012;
             dir = dir.rotate((rnd.nextDouble() - 0.5) * 0.7);
             V2 q = p.add(dir.mul(len));
-            if (!insideConvex(outline, q, 0.003)) {
+            if (!insidePolygon(outline, q, 0.003)) {
                 return;
             }
             double w = len * 1.4;
@@ -712,6 +824,35 @@ public final class Fracture {
                 walk(rnd, piece, outline, p, dir.rotate(side * (0.4 + rnd.nextDouble() * 0.5)), f, depth + 1, out);
             }
         }
+    }
+
+    /** Point strictly inside a simple polygon, at least {@code margin} away from its edges. */
+    static boolean insidePolygon(List<V2> poly, V2 p, double margin) {
+        boolean in = false;
+        int n = poly.size();
+        for (int i = 0, j = n - 1; i < n; j = i++) {
+            V2 a = poly.get(i), b = poly.get(j);
+            if ((a.y() > p.y()) != (b.y() > p.y())
+                    && p.x() < (b.x() - a.x()) * (p.y() - a.y()) / (b.y() - a.y()) + a.x()) {
+                in = !in;
+            }
+            V2 e = b.sub(a);
+            double len2 = e.dot(e);
+            double t = len2 < 1e-18 ? 0 : Math.max(0, Math.min(1, p.sub(a).dot(e) / len2));
+            if (a.add(e.mul(t)).dist(p) < margin) {
+                return false;
+            }
+        }
+        return in;
+    }
+
+    static int countCorners(List<V2> poly) {
+        int c = 0, n = poly.size();
+        for (int i = 0; i < n; i++) {
+            V2 p = poly.get((i + n - 1) % n), q = poly.get(i), r = poly.get((i + 1) % n);
+            if (Math.abs(q.sub(p).normalize().cross(r.sub(q).normalize())) > 0.02) c++;
+        }
+        return c;
     }
 
     static boolean insideConvex(List<V2> poly, V2 p, double margin) {
@@ -738,9 +879,9 @@ public final class Fracture {
         return c.dist(impact) < 0.09 && area * 0.5 < 0.0012;
     }
 
-    private static ShardData buildShard(SplittableRandom rnd, int index, V2[] outline, V2 impact, double openRadius,
-                                        boolean early, V2 mainAnchor, V2 mainDir) {
-        V2 centroid = polygonCentroid(outline);
+    private static ShardData buildShard(SplittableRandom rnd, int index, V2[] outline, V2 centroid, V2 impact,
+                                        double openRadius, boolean early, V2 mainAnchor, V2 mainDir) {
+        // centroid: of the shard's basic shape; the jagged outline was validated to fan from it
         V3 origin = DomeShape.pointAt(centroid, 0);
         V3 normal = DomeShape.normalAt(centroid.x(), centroid.y());
         double thickness = DomeShape.THICKNESS * (0.65 + rnd.nextDouble() * 0.7);
