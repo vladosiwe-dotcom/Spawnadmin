@@ -199,7 +199,8 @@ final class SkyRenderer {
         RenderSystem.blendFunc(GlStateManager.SourceFactor.ONE, GlStateManager.DestFactor.ONE);
 
         // Glow sprite facing the camera.
-        shader.safeGetUniform("BeamParams").set((float) Math.min(1.5, brightness), 1f, 0f, 0f);
+        // Kept moderate: the white hand must stay readable in front of it.
+        shader.safeGetUniform("BeamParams").set((float) Math.min(0.9, brightness * 0.7), 1f, 0f, 0f);
         BufferBuilder buf = Tesselator.getInstance().begin(VertexFormat.Mode.TRIANGLES, DefaultVertexFormat.POSITION_TEX_COLOR_NORMAL);
         double len = Math.sqrt(hx * hx + hy * hy + hz * hz);
         double vx = hx / len, vy = hy / len, vz = hz / len;
@@ -207,7 +208,7 @@ final class SkyRenderer {
         rx /= rl;
         rz /= rl;
         double ux = vy * rz, uy = vz * rx - vx * rz, uz = -vy * rx; // up = view x right (ry = 0)
-        double size = 30 + 40 * Math.min(1.3, brightness);
+        double size = 16 + 24 * Math.min(1.3, brightness);
         quad(buf, hx, hy, hz, rx * size, 0, rz * size, ux * size, uy * size, uz * size, 1f, 0.97f, 0.88f, 1f);
         draw(buf);
 
