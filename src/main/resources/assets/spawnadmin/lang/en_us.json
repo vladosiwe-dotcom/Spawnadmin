@@ -48,5 +48,6 @@
   "message.spawnadmin.you_were_banished": "You were banished from the administrator's realm.",
   "commands.spawnadmin.leave.failed": "You are not in the administrator's realm.",
   "commands.spawnadmin.resetcooldown": "The horn is ready again for players: %s",
-  "commands.spawnadmin.resetcooldown.failed": "Nobody to reset"
+  "commands.spawnadmin.resetcooldown.failed": "Nobody to reset",
+  "message.spawnadmin.no_sky": "There is no sky here: nobody hears the horn."
 }

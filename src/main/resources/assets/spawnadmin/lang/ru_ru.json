@@ -48,5 +48,6 @@
   "message.spawnadmin.you_were_banished": "Тебя изгнали из измерения администратора.",
   "commands.spawnadmin.leave.failed": "Ты не в измерении администратора.",
   "commands.spawnadmin.resetcooldown": "Рог снова готов для игроков: %s",
-  "commands.spawnadmin.resetcooldown.failed": "Некому сбрасывать"
+  "commands.spawnadmin.resetcooldown.failed": "Некому сбрасывать",
+  "message.spawnadmin.no_sky": "Здесь нет неба: рог не слышат."
 }

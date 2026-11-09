@@ -34,6 +34,7 @@ import java.io.UncheckedIOException;
 public final class SpawnAdminClient {
     public SpawnAdminClient(IEventBus modBus) {
         SpawnAdminNetwork.setClientSink(ClientSkyEvents.INSTANCE);
+        com.spawnadmin.item.HeavenHornItem.clientRestRemaining = ClientSkyEvents.INSTANCE::hornRestRemaining;
         modBus.addListener(SpawnAdminClient::registerShaders);
         modBus.addListener(SpawnAdminClient::clientSetup);
 

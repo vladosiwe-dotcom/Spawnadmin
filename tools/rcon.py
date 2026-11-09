@@ -3,7 +3,8 @@ import socket
 import struct
 import sys
 
-HOST, PORT, PASSWORD = "127.0.0.1", 25575, "heaven"
+import os
+HOST, PORT, PASSWORD = "127.0.0.1", int(os.environ.get("RCON_PORT", "25575")), os.environ.get("RCON_PASSWORD", "heaven")
 
 
 def packet(req_id, kind, body):

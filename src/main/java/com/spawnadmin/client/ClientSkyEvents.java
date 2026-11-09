@@ -67,6 +67,18 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
         prepared.computeIfAbsent(payload.seed(), seed -> CompletableFuture.supplyAsync(() -> Fracture.generate(seed), Util.backgroundExecutor()));
     }
 
+    /** Wall-clock time until which the local player's horn rests. */
+    private long hornRestUntil;
+
+    @Override
+    public void onHornRest(com.spawnadmin.network.HornRestPayload payload) {
+        hornRestUntil = payload.remainingMillis() > 0 ? System.currentTimeMillis() + payload.remainingMillis() : 0;
+    }
+
+    long hornRestRemaining() {
+        return Math.max(0, hornRestUntil - System.currentTimeMillis());
+    }
+
     @Override
     public void onSync(SkyEventSyncPayload payload) {
         ClientLevel level = Minecraft.getInstance().level;
@@ -109,7 +121,9 @@ final class ClientSkyEvents implements SpawnAdminNetwork.ClientSink {
         gripPlayed.clear();
         SceneCopy.release();
         ScreenFlash.clear();
+        Cinema.forgetAll();
         pull = pullPrev = pullGoal = 0;
+        hornRestUntil = 0;
         hudHiddenUntil = 0;
         lingeringTheme = null;
     }

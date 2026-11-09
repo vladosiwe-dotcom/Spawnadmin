@@ -214,6 +214,10 @@ final class Cinema {
         VISIBLE.remove(id);
     }
 
+    static void forgetAll() {
+        VISIBLE.clear();
+    }
+
     // ------------------------------------------------------------------ letterbox
 
     /** Black bars, drawn under the HUD. */

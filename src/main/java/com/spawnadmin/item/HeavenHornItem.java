@@ -44,6 +44,10 @@ public class HeavenHornItem extends Item {
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
         if (level.isClientSide) {
+            // A resting horn is not raised at all (the server still says how long it rests).
+            if (!inRealmDimension(level) && (clientRestRemaining.getAsLong() > 0 || !hasSky(level))) {
+                return InteractionResultHolder.fail(stack);
+            }
             player.startUsingItem(hand);
             return InteractionResultHolder.consume(stack);
         }
@@ -53,6 +57,11 @@ public class HeavenHornItem extends Item {
             sp.getCooldowns().addCooldown(this, RETURN_COOLDOWN);
             level.playSound(null, sp.getX(), sp.getY(), sp.getZ(), ModSounds.GRAB_TELEPORT.get(), SoundSource.PLAYERS, 1.0f, 1.2f);
             return InteractionResultHolder.success(stack);
+        }
+        if (!hasSky(level)) {
+            // Under a ceiling (the Nether) there is no sky to break.
+            sp.displayClientMessage(Component.translatable("message.spawnadmin.no_sky").withStyle(ChatFormatting.GRAY), true);
+            return InteractionResultHolder.fail(stack);
         }
         if (SkyEventManager.isBusy(sp)) {
             sp.displayClientMessage(Component.translatable("message.spawnadmin.already_heard"), true);
@@ -74,6 +83,21 @@ public class HeavenHornItem extends Item {
         return InteractionResultHolder.consume(stack);
     }
 
+    /** Client side: how long the local player's horn still rests (set by the client entry point). */
+    public static java.util.function.LongSupplier clientRestRemaining = () -> 0L;
+
+    private static boolean hasSky(Level level) {
+        return !level.dimensionType().hasCeiling();
+    }
+
+    private static boolean inRealmDimension(Level level) {
+        try {
+            return level.dimension().equals(AdminRealm.realmKey()) || level.dimension().equals(AdminRealm.DEFAULT_REALM);
+        } catch (IllegalStateException configNotLoaded) {
+            return level.dimension().equals(AdminRealm.DEFAULT_REALM);
+        }
+    }
+
     /** How long the horn still rests for this player (0 when it is ready). */
     public static long remainingRestMillis(ServerPlayer player) {
         return Math.max(0L, player.getData(ModAttachments.HORN_READY_AT.get()) - System.currentTimeMillis());
@@ -83,10 +107,17 @@ public class HeavenHornItem extends Item {
     public static void startRest(ServerPlayer player) {
         long ms = SpawnAdminConfig.HORN_REST_MINUTES.get() * 60_000L;
         player.setData(ModAttachments.HORN_READY_AT.get(), System.currentTimeMillis() + ms);
+        syncRest(player);
     }
 
     public static void resetRest(ServerPlayer player) {
         player.removeData(ModAttachments.HORN_READY_AT.get());
+        syncRest(player);
+    }
+
+    /** Tells the player's client how long the horn still rests. */
+    public static void syncRest(ServerPlayer player) {
+        com.spawnadmin.network.SpawnAdminNetwork.send(player, new com.spawnadmin.network.HornRestPayload(remainingRestMillis(player)));
     }
 
     /** "4 h 12 min" style, in the player's language. */
@@ -115,5 +146,9 @@ public class HeavenHornItem extends Item {
         tooltip.add(Component.translatable("item.spawnadmin.heaven_horn.desc1").withStyle(ChatFormatting.GRAY, ChatFormatting.ITALIC));
         tooltip.add(Component.translatable("item.spawnadmin.heaven_horn.desc2").withStyle(ChatFormatting.AQUA));
         tooltip.add(Component.translatable("item.spawnadmin.heaven_horn.desc3").withStyle(ChatFormatting.DARK_GRAY));
+        long rest = clientRestRemaining.getAsLong();
+        if (rest > 0) {
+            tooltip.add(Component.translatable("message.spawnadmin.horn_resting", formatRest(rest)).withStyle(ChatFormatting.RED));
+        }
     }
 }

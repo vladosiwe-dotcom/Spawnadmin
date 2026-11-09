@@ -18,6 +18,9 @@ public final class SpawnAdminNetwork {
         void onEnd(SkyEventEndPayload payload);
 
         void onPrepare(SkyEventPreparePayload payload);
+
+        default void onHornRest(HornRestPayload payload) {
+        }
     }
 
     private static volatile ClientSink clientSink = new ClientSink() {
@@ -47,6 +50,8 @@ public final class SpawnAdminNetwork {
                 (payload, ctx) -> ctx.enqueueWork(() -> clientSink.onEnd(payload)));
         registrar.playToClient(SkyEventPreparePayload.TYPE, SkyEventPreparePayload.CODEC,
                 (payload, ctx) -> ctx.enqueueWork(() -> clientSink.onPrepare(payload)));
+        registrar.playToClient(HornRestPayload.TYPE, HornRestPayload.CODEC,
+                (payload, ctx) -> ctx.enqueueWork(() -> clientSink.onHornRest(payload)));
     }
 
     /** Sends only to players whose connection negotiated our channel (mod installed). */

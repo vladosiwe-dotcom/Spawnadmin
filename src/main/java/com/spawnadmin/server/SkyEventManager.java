@@ -83,6 +83,8 @@ public final class SkyEventManager {
         bus.addListener(SkyEventManager::onChangedDimension);
         bus.addListener(SkyEventManager::onRespawn);
         bus.addListener(SkyEventManager::onServerStopped);
+        bus.addListener(SkyEventManager::onLogout);
+        bus.addListener(SkyEventManager::onServerStopping);
     }
 
     // ------------------------------------------------------------------ public API
@@ -316,6 +318,7 @@ public final class SkyEventManager {
     }
 
     private static void lockTarget(ServerSkyEvent event, ServerPlayer target) {
+        target.stopRiding(); // off the horse or out of the boat: the hand takes the rider alone
         event.lockPos = target.position();
         event.lockYaw = target.getYRot();
         AttributeInstance flight = target.getAttribute(NeoForgeMod.CREATIVE_FLIGHT);
@@ -420,6 +423,43 @@ public final class SkyEventManager {
 
     private static void onLogin(PlayerEvent.PlayerLoggedInEvent e) {
         syncLevelTo(e.getEntity());
+        if (e.getEntity() instanceof ServerPlayer sp) {
+            com.spawnadmin.item.HeavenHornItem.syncRest(sp);
+        }
+    }
+
+    /**
+     * A target who leaves mid-event must not be saved hanging in the sky: they are put back on the
+     * ground where they were caught. The event itself aborts on the next tick and the sky reassembles.
+     */
+    private static void onLogout(PlayerEvent.PlayerLoggedOutEvent e) {
+        if (e.getEntity() instanceof ServerPlayer sp) {
+            ServerSkyEvent event = findByTarget(sp.getUUID());
+            if (event != null && !event.teleported) {
+                settle(event, sp);
+            }
+            PENDING.remove(sp.getUUID());
+        }
+    }
+
+    /** Same on shutdown: players are saved right after this, so nobody stays up in the air. */
+    private static void onServerStopping(net.neoforged.neoforge.event.server.ServerStoppingEvent e) {
+        for (ServerSkyEvent event : EVENTS.values()) {
+            ServerPlayer target = e.getServer().getPlayerList().getPlayer(event.target);
+            if (target != null && !event.teleported) {
+                settle(event, target);
+            }
+        }
+    }
+
+    private static void settle(ServerSkyEvent event, ServerPlayer target) {
+        revokeFlight(event, target);
+        target.noPhysics = false;
+        if (event.lockPos != null) {
+            target.setPos(event.lockPos.x, event.lockPos.y, event.lockPos.z);
+        }
+        target.setDeltaMovement(Vec3.ZERO);
+        target.resetFallDistance();
     }
 
     private static void onChangedDimension(PlayerEvent.PlayerChangedDimensionEvent e) {
