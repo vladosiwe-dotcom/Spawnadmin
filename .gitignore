@@ -10,3 +10,4 @@ runs/
 .vscode/
 bin/
 repo/
+__pycache__/
